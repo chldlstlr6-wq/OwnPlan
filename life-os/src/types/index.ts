@@ -9,6 +9,7 @@ export interface Task {
   comment: string | null; // 코멘트 추가
   completed_at: string | null; // 완료 시간 추가
   created_at: string;
+  isEvent?: boolean; // true: 캘린더 이벤트(그 날에만 실행), false/undefined: 마감이 있는 할 일
 }
 
 // Habit types
@@ -19,8 +20,9 @@ export interface Habit {
   user_id: string;
   title: string;
   interval_type: IntervalType;
-  interval_days?: number[]; // 매주: 요일(0-6), 매달: 날짜(1-31)
+  interval_days?: number[]; // 매주: 요일(0-6), 매달: 날짜(1-31), 분기/반기: 월(1-12)
   last_done_date: string | null;
+  completion_records: Record<string, boolean>; // YYYY-MM-DD: true/false 형태로 날짜별 달성 기록
   created_at: string;
 }
 
@@ -37,16 +39,23 @@ export interface ScrapingTarget {
 // Portfolio types
 export type MarketType = 'KR' | 'US';
 
+export interface Account {
+  id: string;
+  name: string; // 예: "키움증권", "토스증권", "미래에셋"
+  cash: number; // 계좌의 잔여 현금 (KRW 기준)
+}
+
 export interface PortfolioItem {
   id: string;
   user_id: string;
+  account_id: string; // 계좌 ID
   ticker: string;
   name?: string;
   market: MarketType;
-  target_ratio: number;
+  target_ratio: number; // 전체 포트폴리오 기준 목표 비중
   current_quantity: number;
-  avg_price: number; // 평균 매수가
-  current_price?: number; // 실시간 가격 (API에서 가져옴)
+  avg_price: number;
+  current_price?: number;
   created_at: string;
 }
 

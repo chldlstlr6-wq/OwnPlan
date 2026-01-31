@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BottomNavigation, PageHeader } from "@/components/layout";
 import { CalendarWidget, TaskCard } from "@/components/features";
 import { Card, Button, BottomSheet, Input } from "@/components/ui";
 import { Task } from "@/types";
-import { formatDate } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
+import { useHabits } from "@/hooks/useHabits";
+import { getStoredTasks, saveTasks } from "@/lib/storage";
 
 // Mock data
 const initialTasks: Task[] = [
@@ -45,15 +47,21 @@ const initialTasks: Task[] = [
 ];
 
 export default function CalendarPage() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks));
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const { habits, toggleHabit, getHabitCompletionStatus, isLoaded } = useHabits();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTask, setNewTask] = useState({
     title: "",
     category: "",
     comment: "",
   });
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const markedDates = tasks
     .filter((task) => task.deadline)
@@ -67,21 +75,27 @@ export default function CalendarPage() {
   });
 
   const handleToggle = (id: string) => {
-    setTasks((prev) =>
-      prev.map((task) =>
+    setTasks((prev) => {
+      const updated = prev.map((task) =>
         task.id === id
-          ? {
+          ? ({
               ...task,
-              status: task.status === "completed" ? "pending" : "completed",
+              status: (task.status === "completed" ? "pending" : "completed") as "pending" | "completed",
               completed_at: task.status === "completed" ? null : new Date().toISOString(),
-            }
+            } as Task)
           : task
-      )
-    );
+      );
+      saveTasks(updated);
+      return updated;
+    });
   };
 
   const handleDelete = (id: string) => {
-    setTasks((prev) => prev.filter((task) => task.id !== id));
+    setTasks((prev) => {
+      const updated = prev.filter((task) => task.id !== id);
+      saveTasks(updated);
+      return updated;
+    });
   };
 
   const handleEdit = (task: Task) => {
@@ -98,8 +112,8 @@ export default function CalendarPage() {
     if (!newTask.title.trim()) return;
 
     if (editingTask) {
-      setTasks((prev) =>
-        prev.map((task) =>
+      setTasks((prev) => {
+        const updated = prev.map((task) =>
           task.id === editingTask.id
             ? {
                 ...task,
@@ -108,8 +122,10 @@ export default function CalendarPage() {
                 comment: newTask.comment || null,
               }
             : task
-        )
-      );
+        );
+        saveTasks(updated);
+        return updated;
+      });
     } else {
       const task: Task = {
         id: Date.now().toString(),
@@ -119,10 +135,15 @@ export default function CalendarPage() {
         status: "pending",
         category: newTask.category || null,
         comment: newTask.comment || null,
+        isEvent: true,
         completed_at: null,
         created_at: new Date().toISOString(),
       };
-      setTasks((prev) => [task, ...prev]);
+      setTasks((prev) => {
+        const updated = [task, ...prev];
+        saveTasks(updated);
+        return updated;
+      });
     }
 
     resetForm();
@@ -157,7 +178,96 @@ export default function CalendarPage() {
           selectedDate={selectedDate}
           onDateSelect={setSelectedDate}
           markedDates={markedDates}
+          habits={habits}
         />
+
+        {/* 오늘의 루틴 달성 상태 */}
+        <section>
+          <h2 className="text-lg font-semibold text-slate-900 mb-3">
+            {formatDate(selectedDate)} 루틴
+          </h2>
+          
+          {isLoaded && habits.length > 0 ? (
+            <div className="space-y-3">
+              {habits.map((habit) => {
+                const dateStr = selectedDate.toISOString().split("T")[0];
+                const isCompleted = getHabitCompletionStatus(habit.id, dateStr);
+                
+                // 해당 날짜에 이 루틴이 실행되어야 하는지 확인
+                const today = selectedDate.getDay();
+                const todayDate = selectedDate.getDate();
+                const todayMonth = selectedDate.getMonth() + 1;
+                
+                const shouldRunToday = 
+                  (habit.interval_type === "day") ||
+                  (habit.interval_type === "week" && habit.interval_days?.includes(today)) ||
+                  (habit.interval_type === "month" && habit.interval_days?.includes(todayDate)) ||
+                  (habit.interval_type === "quarter" && habit.interval_days?.includes(todayMonth)) ||
+                  (habit.interval_type === "half" && habit.interval_days?.includes(todayMonth));
+                
+                if (!shouldRunToday) return null;
+                
+                // 상태별 색상 결정
+                let statusColor = "gray"; // 기본 (실행 대상 아님)
+                let statusText = "예정";
+                let dotColor = "bg-gray-300";
+                
+                if (isCompleted) {
+                  statusColor = "green";
+                  statusText = "완료";
+                  dotColor = "bg-green-500";
+                } else {
+                  // 미완료 상태 - interval_type에 따라 색상 결정
+                  if (habit.interval_type === "day") {
+                    statusColor = "yellow";
+                    statusText = "미완료";
+                    dotColor = "bg-yellow-400";
+                  } else if (habit.interval_type === "week") {
+                    statusColor = "orange";
+                    statusText = "미완료";
+                    dotColor = "bg-orange-400";
+                  } else {
+                    statusColor = "red";
+                    statusText = "미완료";
+                    dotColor = "bg-red-400";
+                  }
+                }
+                
+                return (
+                  <button
+                    key={habit.id}
+                    onClick={() => toggleHabit(habit.id, dateStr)}
+                    className="w-full text-left"
+                  >
+                    <Card variant="outlined" className="flex items-center gap-3 hover:bg-slate-100 transition-colors cursor-pointer">
+                      <div className={cn("w-3 h-3 rounded-full flex-shrink-0", dotColor)} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-900 font-medium truncate">{habit.title}</p>
+                        <p className="text-xs text-slate-400">{statusText}</p>
+                      </div>
+                      <div className={cn(
+                        "text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0",
+                        isCompleted 
+                          ? "bg-green-100 text-green-700"
+                          : "bg-slate-100 text-slate-600"
+                      )}>
+                        {isCompleted ? "✓" : "○"}
+                      </div>
+                    </Card>
+                  </button>
+                );
+              })}
+            </div>
+          ) : !isLoaded ? (
+            <Card className="text-center py-4">
+              <p className="text-slate-400">로딩 중...</p>
+            </Card>
+          ) : (
+            <Card className="text-center py-4">
+              <p className="text-slate-400">루틴이 없습니다</p>
+            </Card>
+          )}
+        </section>
 
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -165,32 +275,37 @@ export default function CalendarPage() {
               {formatDate(selectedDate)} 일정
             </h2>
             <span className="text-sm text-slate-400">
-              {tasksForSelectedDate.length}개
+              {isMounted ? `${tasksForSelectedDate.length}개` : "-"}
             </span>
           </div>
-
-          {tasksForSelectedDate.length > 0 ? (
-            <div className="space-y-2">
-              {tasksForSelectedDate.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onToggle={handleToggle}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
+          {isMounted ? (
+            tasksForSelectedDate.length > 0 ? (
+              <div className="space-y-2">
+                {tasksForSelectedDate.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onToggle={handleToggle}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card className="text-center py-8">
+                <p className="text-slate-400">이 날짜에 일정이 없습니다</p>
+                <Button
+                  variant="ghost"
+                  className="mt-2"
+                  onClick={openAddSheet}
+                >
+                  + 일정 추가하기
+                </Button>
+              </Card>
+            )
           ) : (
-            <Card className="text-center py-8">
-              <p className="text-slate-400">이 날짜에 일정이 없습니다</p>
-              <Button
-                variant="ghost"
-                className="mt-2"
-                onClick={openAddSheet}
-              >
-                + 일정 추가하기
-              </Button>
+            <Card className="text-center py-6">
+              <p className="text-slate-400">로딩 중...</p>
             </Card>
           )}
         </section>

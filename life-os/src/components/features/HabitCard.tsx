@@ -22,27 +22,40 @@ export default function HabitCard({
   onDelete,
 }: HabitCardProps) {
   return (
-    <Card variant="outlined" className={cn(isDue && "border-l-4 border-l-indigo-500")}>
+    <Card variant="outlined" className={cn(!isDue && "border-l-4 border-l-indigo-500")}>
       <div className="flex items-start gap-3">
-        <button
-          onClick={() => onComplete?.(habit.id)}
-          className={cn(
-            "flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all",
-            isDue ? "bg-indigo-500 hover:bg-indigo-600 shadow-sm" : "bg-emerald-100"
-          )}
-        >
-          <svg
-            className={cn("w-5 h-5", isDue ? "text-white" : "text-emerald-600")}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {isDue ? (
+          <button
+            onClick={() => onComplete?.(habit.id)}
+            className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </button>
+            <svg
+              className="w-5 h-5 text-slate-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <circle cx="12" cy="12" r="9" strokeWidth={2} />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={() => onComplete?.(habit.id)}
+            className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-indigo-500 hover:bg-indigo-600 shadow-sm"
+          >
+            <svg
+              className="w-5 h-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+        )}
 
         <div className="flex-1 min-w-0" onClick={() => onEdit?.(habit)}>
-          <p className={cn("text-slate-900 font-medium", !isDue && "text-slate-500")}>
+          <p className={cn("text-slate-900 font-medium", isDue && "text-slate-400")}>
             {habit.title}
           </p>
           <div className="flex items-center gap-2 mt-1 flex-wrap">

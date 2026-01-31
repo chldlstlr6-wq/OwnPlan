@@ -5,6 +5,7 @@ import { BottomNavigation, PageHeader } from "@/components/layout";
 import { TaskCard } from "@/components/features";
 import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { Task } from "@/types";
+import { getStoredTasks, saveTasks } from "@/lib/storage";
 import { cn, getDaysUntil } from "@/lib/utils";
 
 // Mock data
@@ -58,7 +59,7 @@ const initialTasks: Task[] = [
 type SortType = "deadline" | "category" | "created";
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks));
   const [sortBy, setSortBy] = useState<SortType>("deadline");
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
@@ -73,8 +74,10 @@ export default function TasksPage() {
   const COMPLETED_PREVIEW_COUNT = 3;
 
   const { pendingTasks, completedTasks } = useMemo(() => {
-    const pending = tasks.filter((t) => t.status === "pending");
-    const completed = tasks.filter((t) => t.status === "completed");
+    // Tasks 페이지에서는 캘린더 이벤트(isEvent===true)를 제외한 마감형 할 일만 다룸
+    const nonEventTasks = tasks.filter((t) => !t.isEvent);
+    const pending = nonEventTasks.filter((t) => t.status === "pending");
+    const completed = nonEventTasks.filter((t) => t.status === "completed");
 
     const sortFn = (a: Task, b: Task) => {
       if (sortBy === "deadline") {
@@ -102,21 +105,27 @@ export default function TasksPage() {
   }, [tasks, sortBy]);
 
   const handleToggle = (id: string) => {
-    setTasks((prev) =>
-      prev.map((task) =>
+    setTasks((prev) => {
+      const updated = prev.map((task) =>
         task.id === id
-          ? {
+          ? ({
               ...task,
-              status: task.status === "completed" ? "pending" : "completed",
+              status: (task.status === "completed" ? "pending" : "completed") as "pending" | "completed",
               completed_at: task.status === "completed" ? null : new Date().toISOString(),
-            }
+            } as Task)
           : task
-      )
-    );
+      );
+      saveTasks(updated);
+      return updated;
+    });
   };
 
   const handleDelete = (id: string) => {
-    setTasks((prev) => prev.filter((task) => task.id !== id));
+    setTasks((prev) => {
+      const updated = prev.filter((task) => task.id !== id);
+      saveTasks(updated);
+      return updated;
+    });
   };
 
   const handleEdit = (task: Task) => {
@@ -134,8 +143,8 @@ export default function TasksPage() {
     if (!newTask.title.trim()) return;
 
     if (editingTask) {
-      setTasks((prev) =>
-        prev.map((task) =>
+      setTasks((prev) => {
+        const updated = prev.map((task) =>
           task.id === editingTask.id
             ? {
                 ...task,
@@ -145,8 +154,10 @@ export default function TasksPage() {
                 comment: newTask.comment || null,
               }
             : task
-        )
-      );
+        );
+        saveTasks(updated);
+        return updated;
+      });
     } else {
       const task: Task = {
         id: Date.now().toString(),
@@ -156,10 +167,15 @@ export default function TasksPage() {
         status: "pending",
         category: newTask.category || null,
         comment: newTask.comment || null,
+        isEvent: false,
         completed_at: null,
         created_at: new Date().toISOString(),
       };
-      setTasks((prev) => [task, ...prev]);
+      setTasks((prev) => {
+        const updated = [task, ...prev];
+        saveTasks(updated);
+        return updated;
+      });
     }
 
     resetForm();

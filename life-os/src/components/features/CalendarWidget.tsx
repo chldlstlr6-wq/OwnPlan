@@ -3,17 +3,20 @@
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Card } from "../ui";
+import { Habit } from "@/types";
 
 interface CalendarWidgetProps {
   selectedDate?: Date;
   onDateSelect?: (date: Date) => void;
   markedDates?: string[];
+  habits?: Habit[];
 }
 
 export default function CalendarWidget({
   selectedDate = new Date(),
   onDateSelect,
   markedDates = [],
+  habits = [],
 }: CalendarWidgetProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
 
@@ -36,6 +39,41 @@ export default function CalendarWidget({
     }
 
     return days;
+  };
+
+  // 해당 날짜의 루틴 달성 상태를 계산
+  const getHabitStatusForDate = (date: Date) => {
+    const dateStr = date.toISOString().split("T")[0];
+    const today = date.getDay();
+    const todayDate = date.getDate();
+    const todayMonth = date.getMonth() + 1;
+    
+    let allCompleted = 0;
+    let dayIncompleted = 0;
+    let weekIncompleted = 0;
+    let otherIncompleted = 0;
+    
+    habits.forEach((habit) => {
+      const shouldRunToday = 
+        (habit.interval_type === "day") ||
+        (habit.interval_type === "week" && habit.interval_days?.includes(today)) ||
+        (habit.interval_type === "month" && habit.interval_days?.includes(todayDate)) ||
+        (habit.interval_type === "quarter" && habit.interval_days?.includes(todayMonth)) ||
+        (habit.interval_type === "half" && habit.interval_days?.includes(todayMonth));
+      
+      if (!shouldRunToday) return;
+      
+      const isCompleted = habit.completion_records?.[dateStr] ?? false;
+      if (isCompleted) {
+        allCompleted++;
+      } else {
+        if (habit.interval_type === "day") dayIncompleted++;
+        else if (habit.interval_type === "week") weekIncompleted++;
+        else otherIncompleted++;
+      }
+    });
+    
+    return { allCompleted, dayIncompleted, weekIncompleted, otherIncompleted };
   };
 
   const days = getDaysInMonth(currentMonth);
@@ -104,25 +142,51 @@ export default function CalendarWidget({
       </div>
 
       <div className="grid grid-cols-7 gap-1">
-        {days.map((date, index) => (
-          <button
-            key={index}
-            onClick={() => date && onDateSelect?.(date)}
-            disabled={!date}
-            className={cn(
-              "aspect-square flex flex-col items-center justify-center rounded-xl text-sm transition-all relative",
-              !date && "invisible",
-              date && isSelected(date) && "bg-indigo-500 text-white shadow-sm",
-              date && !isSelected(date) && isToday(date) && "bg-indigo-100 text-indigo-700 font-semibold",
-              date && !isSelected(date) && !isToday(date) && "text-slate-700 hover:bg-slate-100"
-            )}
-          >
-            {date?.getDate()}
-            {date && isMarked(date) && !isSelected(date) && (
-              <div className="absolute bottom-1 w-1 h-1 rounded-full bg-indigo-500" />
-            )}
-          </button>
-        ))}
+        {days.map((date, index) => {
+          const status = date ? getHabitStatusForDate(date) : null;
+          
+          return (
+            <button
+              key={index}
+              onClick={() => date && onDateSelect?.(date)}
+              disabled={!date}
+              className={cn(
+                "aspect-square flex flex-col items-center justify-center rounded-xl text-sm transition-all relative",
+                !date && "invisible",
+                date && isSelected(date) && "bg-indigo-500 text-white shadow-sm",
+                date && !isSelected(date) && isToday(date) && "bg-indigo-100 text-indigo-700 font-semibold",
+                date && !isSelected(date) && !isToday(date) && "text-slate-700 hover:bg-slate-100"
+              )}
+            >
+              <span>{date?.getDate()}</span>
+              
+              {/* 루틴 달성 표시 - 최대 2개까지 표시 */}
+              {date && status && (status.allCompleted > 0 || status.dayIncompleted > 0 || status.weekIncompleted > 0 || status.otherIncompleted > 0) && (
+                <div className="flex gap-0.5 mt-0.5">
+                  {/* 완료: 초록색 */}
+                  {status.allCompleted > 0 && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" title={`완료: ${status.allCompleted}개`} />
+                  )}
+                  
+                  {/* 일일 미완료: 노란색 */}
+                  {status.dayIncompleted > 0 && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" title={`일일 미완료: ${status.dayIncompleted}개`} />
+                  )}
+                  
+                  {/* 주간 미완료: 주황색 */}
+                  {status.weekIncompleted > 0 && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-orange-400" title={`주간 미완료: ${status.weekIncompleted}개`} />
+                  )}
+                  
+                  {/* 기타 미완료 (분기/월간/반기): 빨간색 */}
+                  {status.otherIncompleted > 0 && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-400" title={`장기 미완료: ${status.otherIncompleted}개`} />
+                  )}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </Card>
   );

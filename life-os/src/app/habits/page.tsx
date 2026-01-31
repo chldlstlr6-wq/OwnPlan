@@ -6,53 +6,15 @@ import { HabitCard } from "@/components/features";
 import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { Habit, IntervalType } from "@/types";
 import { cn, getIntervalLabel } from "@/lib/utils";
+import { useHabits } from "@/hooks/useHabits";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
-const initialHabits: Habit[] = [
-  {
-    id: "1",
-    user_id: "user1",
-    title: "운동하기",
-    interval_type: "day",
-    interval_days: undefined,
-    last_done_date: null,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    user_id: "user1",
-    title: "독서 30분",
-    interval_type: "day",
-    interval_days: undefined,
-    last_done_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    user_id: "user1",
-    title: "주간 리뷰",
-    interval_type: "week",
-    interval_days: [0],
-    last_done_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "4",
-    user_id: "user1",
-    title: "월간 가계부 정리",
-    interval_type: "month",
-    interval_days: [1],
-    last_done_date: null,
-    created_at: new Date().toISOString(),
-  },
-];
-
 const intervalTypes: IntervalType[] = ["day", "week", "month", "quarter", "half", "year"];
 
 export default function HabitsPage() {
-  const [habits, setHabits] = useState<Habit[]>(initialHabits);
+  const { habits, toggleHabit, addHabit, deleteHabit, isLoaded } = useHabits();
   const [filterInterval, setFilterInterval] = useState<IntervalType | "all">("all");
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [newHabit, setNewHabit] = useState({
@@ -101,20 +63,6 @@ export default function HabitsPage() {
     }
   };
 
-  const handleComplete = (id: string) => {
-    setHabits((prev) =>
-      prev.map((habit) =>
-        habit.id === id
-          ? { ...habit, last_done_date: new Date().toISOString().split("T")[0] }
-          : habit
-      )
-    );
-  };
-
-  const handleDelete = (id: string) => {
-    setHabits((prev) => prev.filter((habit) => habit.id !== id));
-  };
-
   const handleAddHabit = () => {
     if (!newHabit.title.trim()) return;
 
@@ -125,10 +73,11 @@ export default function HabitsPage() {
       interval_type: newHabit.interval_type,
       interval_days: newHabit.interval_days.length > 0 ? newHabit.interval_days : undefined,
       last_done_date: null,
+      completion_records: {},
       created_at: new Date().toISOString(),
     };
 
-    setHabits((prev) => [habit, ...prev]);
+    addHabit(habit);
     resetForm();
   };
 
@@ -153,6 +102,12 @@ export default function HabitsPage() {
     }
     if (habit.interval_type === "month") {
       return habit.interval_days.map((d) => `${d}일`).join(", ");
+    }
+    if (habit.interval_type === "quarter") {
+      return `분기: ${habit.interval_days.map((m) => `${m}월`).join(", ")}`;
+    }
+    if (habit.interval_type === "half") {
+      return `반기: ${habit.interval_days.map((m) => `${m}월`).join(", ")}`;
     }
     return "";
   };
@@ -203,7 +158,7 @@ export default function HabitsPage() {
 
         <section>
           <h2 className="text-lg font-semibold text-slate-900 mb-3">실행 필요</h2>
-          {dueHabits.length > 0 ? (
+          {isLoaded && dueHabits.length > 0 ? (
             <div className="space-y-2">
               {dueHabits.map((habit) => (
                 <HabitCard
@@ -211,11 +166,15 @@ export default function HabitsPage() {
                   habit={habit}
                   isDue={true}
                   intervalDaysText={getIntervalDaysText(habit)}
-                  onComplete={handleComplete}
-                  onDelete={handleDelete}
+                  onComplete={toggleHabit}
+                  onDelete={deleteHabit}
                 />
               ))}
             </div>
+          ) : !isLoaded ? (
+            <Card className="text-center py-6">
+              <p className="text-slate-400">로딩 중...</p>
+            </Card>
           ) : (
             <Card className="text-center py-6">
               <p className="text-slate-400">모든 루틴을 완료했습니다!</p>
@@ -233,8 +192,8 @@ export default function HabitsPage() {
                   habit={habit}
                   isDue={false}
                   intervalDaysText={getIntervalDaysText(habit)}
-                  onComplete={handleComplete}
-                  onDelete={handleDelete}
+                  onComplete={toggleHabit}
+                  onDelete={deleteHabit}
                 />
               ))}
             </div>
@@ -322,6 +281,60 @@ export default function HabitsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {newHabit.interval_type === "quarter" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                분기 실행 월 (분기마다 한번씩)
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                  <button
+                    key={month}
+                    onClick={() => toggleIntervalDay(month)}
+                    className={cn(
+                      "py-2 rounded-lg text-sm font-medium transition-all",
+                      newHabit.interval_days.includes(month)
+                        ? "bg-indigo-500 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    )}
+                  >
+                    {month}월
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                💡 선택한 월 중 실행 요일: 매월 1일 (또는 해당 월의 시작)
+              </p>
+            </div>
+          )}
+
+          {newHabit.interval_type === "half" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                반기 실행 월 (반년마다 한번씩)
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                  <button
+                    key={month}
+                    onClick={() => toggleIntervalDay(month)}
+                    className={cn(
+                      "py-2 rounded-lg text-sm font-medium transition-all",
+                      newHabit.interval_days.includes(month)
+                        ? "bg-indigo-500 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    )}
+                  >
+                    {month}월
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                💡 선택한 월 중 실행: 상반기 1개월, 하반기 1개월
+              </p>
             </div>
           )}
 
