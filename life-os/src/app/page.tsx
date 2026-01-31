@@ -9,7 +9,7 @@ import { getDaysUntil, getIntervalLabel } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
 import Link from "next/link";
 import { getStoredTasks, saveTasks, getStoredPortfolio } from "@/lib/storage";
-import { initialPortfolio as portfolioInitial } from "@/app/portfolio/page";
+import { initialPortfolio as portfolioInitial } from "@/app/portfolio/constants";
 
 // Mock data - will be replaced with Supabase
 const initialTasks: Task[] = [
