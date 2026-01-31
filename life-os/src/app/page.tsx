@@ -171,7 +171,7 @@ export default function HomePage() {
         task.id === id
           ? {
               ...task,
-              status: (task.status === "completed" ? "pending" : "completed") as const,
+              status: (task.status === "completed" ? "pending" : "completed") as 'pending' | 'completed',
               completed_at: task.status === "completed" ? null : new Date().toISOString(),
             }
           : task
