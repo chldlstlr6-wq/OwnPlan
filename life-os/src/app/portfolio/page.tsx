@@ -9,12 +9,12 @@ import { getStoredPortfolio, savePortfolio, getStoredAccounts, saveAccounts } fr
 
 const CASH_TICKER = "__CASH__";
 
-export const initialAccounts: Account[] = [
+const initialAccounts: Account[] = [
   { id: "acc1", name: "키움증권", cash: 500000 },
   { id: "acc2", name: "토스증권", cash: 300000 },
 ];
 
-export const initialPortfolio: PortfolioItem[] = [
+const initialPortfolio: PortfolioItem[] = [
   // 현금 항목
   {
     id: "cash1",
