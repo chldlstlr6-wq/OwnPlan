@@ -14,7 +14,7 @@ const initialAccounts: Account[] = [
   { id: "acc2", name: "토스증권", cash: 300000 },
 ];
 
-const initialPortfolio: PortfolioItem[] = [
+export const initialPortfolio: PortfolioItem[] = [
   // 현금 항목
   {
     id: "cash1",
