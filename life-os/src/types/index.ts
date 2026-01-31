@@ -9,21 +9,33 @@ export interface Task {
   comment: string | null; // 코멘트 추가
   completed_at: string | null; // 완료 시간 추가
   created_at: string;
+  updated_at: string; // 마지막 수정 시간 (Supabase ↔ 로컬스토리지 동기화용)
   isEvent?: boolean; // true: 캘린더 이벤트(그 날에만 실행), false/undefined: 마감이 있는 할 일
 }
 
 // Habit types
 export type IntervalType = 'day' | 'week' | 'month' | 'quarter' | 'half' | 'year';
+export type DateType = 'specific_date' | 'nth_weekday'; // 특정 날짜 vs n번째 요일
+
+export interface QuarterHalfYearConfig {
+  type: DateType; // 'specific_date': 각 월의 특정 날, 'nth_weekday': n번째 요일
+  months: number[]; // 선택된 월들 (1-12)
+  specificDate?: number; // type이 'specific_date'일 때 사용 (1-31)
+  weekday?: number; // type이 'nth_weekday'일 때 요일 (0-6)
+  weekCount?: number; // type이 'nth_weekday'일 때 몇 번째 (1-5)
+}
 
 export interface Habit {
   id: string;
   user_id: string;
   title: string;
   interval_type: IntervalType;
-  interval_days?: number[]; // 매주: 요일(0-6), 매달: 날짜(1-31), 분기/반기: 월(1-12)
+  interval_days?: number[]; // 매주: 요일(0-6), 매달: 날짜(1-31)
+  quarterHalfYearConfig?: QuarterHalfYearConfig; // 분기/반기/연간 세부 설정
   last_done_date: string | null;
   completion_records: Record<string, boolean>; // YYYY-MM-DD: true/false 형태로 날짜별 달성 기록
   created_at: string;
+  updated_at: string; // 마지막 수정 시간 (Supabase ↔ 로컬스토리지 동기화용)
 }
 
 // Scraping Target types

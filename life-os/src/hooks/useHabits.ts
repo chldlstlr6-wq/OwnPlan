@@ -1,129 +1,154 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Habit } from "@/types";
-
-const HABITS_STORAGE_KEY = "habits_data";
-
-// 초기 루틴 데이터
-const initialHabits: Habit[] = [
-  {
-    id: "1",
-    user_id: "user1",
-    title: "운동하기",
-    interval_type: "day",
-    interval_days: undefined,
-    last_done_date: null,
-    completion_records: {},
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    user_id: "user1",
-    title: "독서 30분",
-    interval_type: "day",
-    interval_days: undefined,
-    last_done_date: null,
-    completion_records: {},
-    created_at: new Date().toISOString(),
-  },
-];
+import { getStoredHabits, saveHabits } from "@/lib/storage";
 
 export function useHabits(userId?: string) {
-  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habits, setHabits] = useState<Habit[]>(() => getStoredHabits([]));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [isOnline, setIsOnline] = useState(typeof window !== "undefined" && navigator.onLine);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchHabits = useCallback(async () => {
-    if (!userId) {
-      // userId가 없으면 로컬스토리지에서 로드 (오프라인 모드)
-      if (typeof window !== "undefined") {
-        try {
-          const stored = localStorage.getItem(HABITS_STORAGE_KEY);
-          setHabits(stored ? JSON.parse(stored) : initialHabits);
-        } catch (err) {
-          console.error("Failed to load habits from localStorage:", err);
-          setHabits(initialHabits);
-        }
+  // 로컬과 서버의 데이터를 updated_at 기준으로 병합
+  const mergeDataByTimestamp = useCallback((local: Habit[], server: Habit[]): Habit[] => {
+    const merged = new Map<string, Habit>();
+
+    // 로컬 데이터 추가
+    local.forEach((h) => merged.set(h.id, h));
+
+    // 서버 데이터: updated_at이 더 최신이면 덮어쓰기
+    server.forEach((s) => {
+      const existing = merged.get(s.id);
+      if (!existing || new Date(s.updated_at) > new Date(existing.updated_at)) {
+        merged.set(s.id, s);
       }
-      setLoading(false);
-      return;
-    }
+    });
+
+    return Array.from(merged.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, []);
+
+  // 오프라인 중인 변경사항을 온라인 상태에서 Supabase에 upsert
+  const syncLocalChanges = useCallback(async () => {
+    if (!isOnline) return;
 
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("habits")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
+      const localHabits = getStoredHabits([]);
+      if (localHabits.length === 0) return;
 
+      for (const habit of localHabits) {
+        // id가 없거나 타임스탬프 기반으로 로컬이 더 최신이면 upsert
+        try {
+          const { data: serverHabit, error } = await supabase
+            .from("habits")
+            .select("*")
+            .eq("id", habit.id)
+            .single();
+
+          if (!error && serverHabit && new Date(habit.updated_at) <= new Date(serverHabit.updated_at)) {
+            // 서버 데이터가 더 최신이면 스킵
+            continue;
+          }
+
+          // 로컬이 더 최신이거나 서버에 없으면 upsert
+          const { error: upsertError } = await supabase.from("habits").upsert([habit], { onConflict: "id" });
+          if (upsertError) console.error(`Failed to sync habit ${habit.id}:`, upsertError);
+        } catch (err) {
+          console.error(`Failed to check/sync habit ${habit.id}:`, err);
+        }
+      }
+
+      // 동기화 완료 후 서버에서 최신 데이터 다시 가져오기
+      await fetchHabits();
+    } catch (err) {
+      console.error("Failed to sync local changes:", err);
+    }
+  }, [isOnline]);
+
+  // 온라인/오프라인 상태 감지
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // 온라인 복구 시 로컬 변경사항 동기화
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = setTimeout(() => {
+        syncLocalChanges();
+      }, 1000); // 1초 후 동기화 시작
+    };
+
+    const handleOffline = () => setIsOnline(false);
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
+      return () => {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      };
+    }
+  }, [syncLocalChanges]);
+
+  const fetchHabits = useCallback(async () => {
+    try {
+      setLoading(true);
+      let query = supabase.from("habits").select("*").order("created_at", { ascending: false });
+      if (userId) query = query.eq("user_id", userId);
+
+      const { data, error } = await query;
       if (error) throw error;
 
-      // Supabase에서 로드 성공 시 로컬스토리지에 저장
       if (data) {
-        setHabits(data as Habit[]);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(data));
-        }
+        // 로컬 데이터와 서버 데이터 병합 (updated_at 기준)
+        const local = getStoredHabits([]);
+        const merged = mergeDataByTimestamp(local, data as Habit[]);
+        setHabits(merged);
+        if (typeof window !== "undefined") saveHabits(merged);
       }
     } catch (err) {
       console.error("Failed to fetch habits from Supabase:", err);
       // Supabase 실패 시 로컬스토리지에서 폴백
-      if (typeof window !== "undefined") {
-        try {
-          const stored = localStorage.getItem(HABITS_STORAGE_KEY);
-          setHabits(stored ? JSON.parse(stored) : initialHabits);
-        } catch (fallbackErr) {
-          console.error("Failed to load habits from localStorage:", fallbackErr);
-          setHabits(initialHabits);
-        }
+      try {
+        const stored = getStoredHabits([]);
+        setHabits(stored);
+      } catch (fallbackErr) {
+        console.error("Failed to load habits from localStorage:", fallbackErr);
+        setHabits([]);
       }
       setError(err instanceof Error ? err : new Error("Failed to fetch habits"));
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, mergeDataByTimestamp]);
 
   useEffect(() => {
     fetchHabits();
   }, [fetchHabits]);
 
   const addHabit = useCallback(
-    async (habit: Omit<Habit, "id" | "created_at">) => {
-      if (!userId) {
-        // userId가 없으면 로컬스토리지에만 저장
-        const newHabit: Habit = {
-          ...(habit as Habit),
-          id: Date.now().toString(),
-          created_at: new Date().toISOString(),
-        };
-        const updated = [...habits, newHabit];
-        setHabits(updated);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(updated));
-        }
-        return { data: newHabit, error: null };
-      }
-
+    async (habit: Omit<Habit, "id" | "created_at" | "updated_at">) => {
       try {
-        const { data, error } = await supabase
-          .from("habits")
-          .insert([{ ...habit, user_id: userId }])
-          .select()
-          .single();
-
+        const now = new Date().toISOString();
+        const payload = { ...habit, user_id: userId || "", created_at: now, updated_at: now };
+        const { data, error } = await supabase.from("habits").insert([payload]).select().single();
         if (error) throw error;
-        const newHabits = [data as Habit, ...habits];
+
+        const newHabits = data ? [data as Habit, ...habits] : [{ ...(habit as Habit), id: Date.now().toString(), created_at: now, updated_at: now }, ...habits];
         setHabits(newHabits);
-        // Supabase 저장 후 로컬스토리지에도 저장
-        if (typeof window !== "undefined") {
-          localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(newHabits));
-        }
+        if (typeof window !== "undefined") saveHabits(newHabits);
         return { data, error: null };
       } catch (err) {
-        return { data: null, error: err instanceof Error ? err : new Error("Failed to add habit") };
+        // Supabase 실패 시 로컬 저장
+        const now = new Date().toISOString();
+        const newHabit: Habit = { ...(habit as Habit), id: Date.now().toString(), created_at: now, updated_at: now };
+        const updated = [newHabit, ...habits];
+        setHabits(updated);
+        if (typeof window !== "undefined") saveHabits(updated);
+        return { data: newHabit, error: null };
       }
     },
     [userId, habits]
@@ -131,61 +156,37 @@ export function useHabits(userId?: string) {
 
   const updateHabit = useCallback(async (id: string, updates: Partial<Habit>) => {
     try {
-      const updated = habits.map((habit) => (habit.id === id ? { ...habit, ...updates } : habit));
+      const now = new Date().toISOString();
+      const updatesWithTimestamp = { ...updates, updated_at: now };
+      
+      const updated = habits.map((habit) => 
+        habit.id === id ? { ...habit, ...updatesWithTimestamp } : habit
+      );
       setHabits(updated);
+      if (typeof window !== "undefined") saveHabits(updated);
 
-      // 로컬스토리지에 저장
-      if (typeof window !== "undefined") {
-        localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(updated));
-      }
-
-      // Supabase에도 저장 시도 (있으면)
-      if (userId) {
-        const { data, error } = await supabase
-          .from("habits")
-          .update(updates)
-          .eq("id", id)
-          .select()
-          .single();
-
-        if (error) throw error;
-        // Supabase 업데이트 성공 시 로컬스토리지 다시 동기화
-        if (typeof window !== "undefined") {
-          const synced = habits.map((habit) => (habit.id === id ? (data as Habit) : habit));
-          localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(synced));
-        }
-        return { data, error: null };
-      }
-
-      return { data: updated[0], error: null };
+      const { error } = await supabase.from("habits").update(updatesWithTimestamp).eq("id", id);
+      if (error) throw error;
+      return { data: updated.find((h) => h.id === id) ?? null, error: null };
     } catch (err) {
       return { data: null, error: err instanceof Error ? err : new Error("Failed to update habit") };
     }
-  }, [habits, userId]);
+  }, [habits]);
 
   const deleteHabit = useCallback(async (id: string) => {
     try {
       const updated = habits.filter((habit) => habit.id !== id);
       setHabits(updated);
+      if (typeof window !== "undefined") saveHabits(updated);
 
-      // 로컬스토리지에 저장
-      if (typeof window !== "undefined") {
-        localStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(updated));
-      }
-
-      // Supabase에도 삭제 시도 (있으면)
-      if (userId) {
-        const { error } = await supabase.from("habits").delete().eq("id", id);
-        if (error) throw error;
-      }
-
+      const { error } = await supabase.from("habits").delete().eq("id", id);
+      if (error) throw error;
       return { error: null };
     } catch (err) {
       return { error: err instanceof Error ? err : new Error("Failed to delete habit") };
     }
-  }, [habits, userId]);
+  }, [habits]);
 
-  // 루틴 토글 (완료/미완료) - 날짜별 기록
   const toggleHabit = useCallback(
     (id: string, dateStr?: string) => {
       const habit = habits.find((h) => h.id === id);
@@ -194,26 +195,22 @@ export function useHabits(userId?: string) {
       const date = dateStr || new Date().toISOString().split("T")[0];
       const records = { ...habit.completion_records };
       const isCompleted = records[date];
-      
-      // 토글
       records[date] = !isCompleted;
-      
-      // last_done_date 업데이트 (마지막 완료 날짜)
+
       const completedDates = Object.entries(records)
         .filter(([_, completed]) => completed)
         .map(([dateKey]) => dateKey)
         .sort()
         .reverse();
-      
-      updateHabit(id, { 
+
+      updateHabit(id, {
         last_done_date: completedDates.length > 0 ? completedDates[0] : null,
-        completion_records: records 
+        completion_records: records,
       });
     },
     [habits, updateHabit]
   );
 
-  // 특정 날짜의 루틴 완료 상태 조회
   const getHabitCompletionStatus = useCallback(
     (habitId: string, dateStr?: string): boolean => {
       const habit = habits.find((h) => h.id === habitId);
@@ -253,6 +250,7 @@ export function useHabits(userId?: string) {
     habits,
     loading,
     error,
+    isOnline,
     fetchHabits,
     addHabit,
     updateHabit,

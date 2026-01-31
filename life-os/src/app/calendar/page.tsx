@@ -21,6 +21,7 @@ const initialTasks: Task[] = [
     comment: "팀장님께 먼저 검토 요청",
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "2",
@@ -32,6 +33,7 @@ const initialTasks: Task[] = [
     comment: "회의실 3층 A",
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "3",
@@ -43,6 +45,7 @@ const initialTasks: Task[] = [
     comment: null,
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
 ];
 
@@ -138,6 +141,7 @@ export default function CalendarPage() {
         isEvent: true,
         completed_at: null,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       setTasks((prev) => {
         const updated = [task, ...prev];

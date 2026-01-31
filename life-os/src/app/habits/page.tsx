@@ -1,352 +1,179 @@
 "use client";
 
 import { useState } from "react";
-import { BottomNavigation, PageHeader } from "@/components/layout";
-import { HabitCard } from "@/components/features";
-import { Button, BottomSheet, Input, Card } from "@/components/ui";
-import { Habit, IntervalType } from "@/types";
-import { cn, getIntervalLabel } from "@/lib/utils";
+import PageHeader from "@/components/layout/PageHeader";
+import BottomSheet from "@/components/ui/BottomSheet";
+import Button from "@/components/ui/Button";
 import { useHabits } from "@/hooks/useHabits";
-
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-
-const intervalTypes: IntervalType[] = ["day", "week", "month", "quarter", "half", "year"];
+import { DateType, Habit, IntervalType, QuarterHalfYearConfig } from "@/types";
 
 export default function HabitsPage() {
-  const { habits, toggleHabit, addHabit, deleteHabit, isLoaded } = useHabits();
-  const [filterInterval, setFilterInterval] = useState<IntervalType | "all">("all");
-  const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
-  const [newHabit, setNewHabit] = useState({
-    title: "",
-    interval_type: "day" as IntervalType,
-    interval_days: [] as number[],
-  });
+  const { habits, addHabit, deleteHabit } = useHabits();
 
-  const filteredHabits = habits.filter((habit) => {
-    if (filterInterval === "all") return true;
-    return habit.interval_type === filterInterval;
-  });
+  const [isOpen, setIsOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [intervalType, setIntervalType] = useState<IntervalType>("day");
 
-  const isHabitDue = (habit: Habit): boolean => {
-    const now = new Date();
-    const today = now.getDay();
-    const todayDate = now.getDate();
+  const [dateType, setDateType] = useState<DateType>("specific_date");
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
+  const [specificDate, setSpecificDate] = useState<number>(1);
+  const [weekday, setWeekday] = useState<number>(1);
+  const [weekCount, setWeekCount] = useState<number>(1);
 
-    if (habit.interval_type === "week" && habit.interval_days?.length) {
-      if (!habit.interval_days.includes(today)) return false;
-    }
-    if (habit.interval_type === "month" && habit.interval_days?.length) {
-      if (!habit.interval_days.includes(todayDate)) return false;
-    }
-
-    if (!habit.last_done_date) return true;
-
-    const lastDone = new Date(habit.last_done_date);
-    const diffDays = Math.floor((now.getTime() - lastDone.getTime()) / (1000 * 60 * 60 * 24));
-
-    switch (habit.interval_type) {
-      case "day":
-        return diffDays >= 1;
-      case "week":
-        return diffDays >= 1;
-      case "month":
-        return diffDays >= 1;
-      case "quarter":
-        return diffDays >= 90;
-      case "half":
-        return diffDays >= 180;
-      case "year":
-        return diffDays >= 365;
-      default:
-        return true;
-    }
-  };
-
-  const handleAddHabit = () => {
-    if (!newHabit.title.trim()) return;
-
-    const habit: Habit = {
-      id: Date.now().toString(),
-      user_id: "user1",
-      title: newHabit.title,
-      interval_type: newHabit.interval_type,
-      interval_days: newHabit.interval_days.length > 0 ? newHabit.interval_days : undefined,
-      last_done_date: null,
-      completion_records: {},
-      created_at: new Date().toISOString(),
-    };
-
-    addHabit(habit);
-    resetForm();
+  const toggleMonth = (m: number) => {
+    setSelectedMonths((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
   };
 
   const resetForm = () => {
-    setNewHabit({ title: "", interval_type: "day", interval_days: [] });
-    setIsAddSheetOpen(false);
+    setTitle("");
+    setIntervalType("day");
+    setDateType("specific_date");
+    setSelectedMonths([]);
+    setSpecificDate(1);
+    setWeekday(1);
+    setWeekCount(1);
   };
 
-  const toggleIntervalDay = (day: number) => {
-    setNewHabit((prev) => ({
-      ...prev,
-      interval_days: prev.interval_days.includes(day)
-        ? prev.interval_days.filter((d) => d !== day)
-        : [...prev.interval_days, day].sort((a, b) => a - b),
-    }));
-  };
+  const handleAdd = async () => {
+    if (!title.trim()) return;
 
-  const getIntervalDaysText = (habit: Habit): string => {
-    if (!habit.interval_days?.length) return "";
-    if (habit.interval_type === "week") {
-      return habit.interval_days.map((d) => WEEKDAYS[d]).join(", ");
-    }
-    if (habit.interval_type === "month") {
-      return habit.interval_days.map((d) => `${d}일`).join(", ");
-    }
-    if (habit.interval_type === "quarter") {
-      return `분기: ${habit.interval_days.map((m) => `${m}월`).join(", ")}`;
-    }
-    if (habit.interval_type === "half") {
-      return `반기: ${habit.interval_days.map((m) => `${m}월`).join(", ")}`;
-    }
-    return "";
-  };
+    const newHabit: Omit<Habit, "id" | "created_at" | "updated_at"> = {
+      user_id: "",
+      title: title.trim(),
+      interval_type: intervalType,
+      interval_days: undefined,
+      quarterHalfYearConfig: undefined,
+      last_done_date: null,
+      completion_records: {},
+    };
 
-  const dueHabits = filteredHabits.filter(isHabitDue);
-  const notDueHabits = filteredHabits.filter((h) => !isHabitDue(h));
+    if (["quarter", "half", "year"].includes(intervalType)) {
+      const cfg: QuarterHalfYearConfig = {
+        type: dateType,
+        months: selectedMonths,
+      } as QuarterHalfYearConfig;
+
+      if (dateType === "specific_date") {
+        cfg.specificDate = specificDate;
+      } else {
+        cfg.weekday = weekday;
+        cfg.weekCount = weekCount;
+      }
+
+      newHabit.quarterHalfYearConfig = cfg;
+    }
+
+    await addHabit(newHabit as any);
+    resetForm();
+    setIsOpen(false);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
+    <div>
       <PageHeader
         title="루틴 관리"
-        subtitle={`${dueHabits.length}개 실행 필요`}
-        action={
-          <Button size="sm" onClick={() => setIsAddSheetOpen(true)}>
-            + 추가
-          </Button>
-        }
+        subtitle="루틴을 추가/편집하세요. 실행 여부는 여기서 변경할 수 없습니다."
+        action={<Button onClick={() => setIsOpen(true)}>추가</Button>}
       />
 
-      <main className="px-4 space-y-6">
-        <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
-          <button
-            onClick={() => setFilterInterval("all")}
-            className={cn(
-              "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all",
-              filterInterval === "all"
-                ? "bg-indigo-500 text-white shadow-sm"
-                : "bg-white text-slate-500 hover:bg-slate-100"
-            )}
-          >
-            전체
-          </button>
-          {intervalTypes.map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilterInterval(type)}
-              className={cn(
-                "flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all",
-                filterInterval === type
-                  ? "bg-indigo-500 text-white shadow-sm"
-                  : "bg-white text-slate-500 hover:bg-slate-100"
-              )}
-            >
-              {getIntervalLabel(type)}
-            </button>
+      <main className="p-4">
+        <div className="space-y-3">
+          {habits.map((h) => (
+            <div key={h.id} className="flex items-center justify-between p-3 bg-white rounded-xl shadow-sm">
+              <div>
+                <div className="font-medium">{h.title}</div>
+                <div className="text-sm text-slate-500">{h.interval_type}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" onClick={() => deleteHabit(h.id)}>삭제</Button>
+              </div>
+            </div>
           ))}
         </div>
-
-        <section>
-          <h2 className="text-lg font-semibold text-slate-900 mb-3">실행 필요</h2>
-          {isLoaded && dueHabits.length > 0 ? (
-            <div className="space-y-2">
-              {dueHabits.map((habit) => (
-                <HabitCard
-                  key={habit.id}
-                  habit={habit}
-                  isDue={true}
-                  intervalDaysText={getIntervalDaysText(habit)}
-                  onComplete={toggleHabit}
-                  onDelete={deleteHabit}
-                />
-              ))}
-            </div>
-          ) : !isLoaded ? (
-            <Card className="text-center py-6">
-              <p className="text-slate-400">로딩 중...</p>
-            </Card>
-          ) : (
-            <Card className="text-center py-6">
-              <p className="text-slate-400">모든 루틴을 완료했습니다!</p>
-            </Card>
-          )}
-        </section>
-
-        {notDueHabits.length > 0 && (
-          <section>
-            <h2 className="text-lg font-semibold text-slate-900 mb-3">완료됨</h2>
-            <div className="space-y-2">
-              {notDueHabits.map((habit) => (
-                <HabitCard
-                  key={habit.id}
-                  habit={habit}
-                  isDue={false}
-                  intervalDaysText={getIntervalDaysText(habit)}
-                  onComplete={toggleHabit}
-                  onDelete={deleteHabit}
-                />
-              ))}
-            </div>
-          </section>
-        )}
       </main>
 
-      <BottomSheet
-        isOpen={isAddSheetOpen}
-        onClose={resetForm}
-        title="새 루틴 추가"
-      >
+      <BottomSheet isOpen={isOpen} onClose={() => setIsOpen(false)} title="루틴 추가">
         <div className="space-y-4">
-          <Input
-            label="루틴 이름"
-            placeholder="루틴을 입력하세요"
-            value={newHabit.title}
-            onChange={(e) => setNewHabit({ ...newHabit, title: e.target.value })}
-          />
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              반복 주기
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {intervalTypes.map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setNewHabit({ ...newHabit, interval_type: type, interval_days: [] })}
-                  className={cn(
-                    "px-3 py-2 rounded-xl text-sm font-medium transition-all",
-                    newHabit.interval_type === type
-                      ? "bg-indigo-500 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  )}
-                >
-                  {getIntervalLabel(type)}
-                </button>
-              ))}
-            </div>
+            <label className="block text-sm text-slate-600 mb-1">제목</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="루틴 제목을 입력하세요"
+            />
           </div>
 
-          {newHabit.interval_type === "week" && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                실행 요일
-              </label>
-              <div className="flex gap-2">
-                {WEEKDAYS.map((day, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => toggleIntervalDay(idx)}
-                    className={cn(
-                      "flex-1 py-2 rounded-lg text-sm font-medium transition-all",
-                      newHabit.interval_days.includes(idx)
-                        ? "bg-indigo-500 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    {day}
-                  </button>
-                ))}
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">주기</label>
+            <select value={intervalType} onChange={(e) => setIntervalType(e.target.value as IntervalType)} className="w-full px-3 py-2 border rounded-lg">
+              <option value="day">매일</option>
+              <option value="week">매주</option>
+              <option value="month">매월</option>
+              <option value="quarter">분기</option>
+              <option value="half">반기</option>
+              <option value="year">연간</option>
+            </select>
+          </div>
+
+          {["quarter", "half", "year"].includes(intervalType) && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm text-slate-600 mb-2">적용 월 선택</div>
+                <div className="grid grid-cols-6 gap-2">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => toggleMonth(m)}
+                      className={`px-2 py-1 rounded ${selectedMonths.includes(m) ? "bg-indigo-500 text-white" : "bg-slate-100 text-slate-700"}`}
+                    >
+                      {m}월
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              <div>
+                <div className="text-sm text-slate-600 mb-2">날짜 유형</div>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={dateType === "specific_date"} onChange={() => setDateType("specific_date")} />
+                    <span className="text-sm">특정 날짜</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" checked={dateType === "nth_weekday"} onChange={() => setDateType("nth_weekday")} />
+                    <span className="text-sm">n번째 요일</span>
+                  </label>
+                </div>
+              </div>
+
+              {dateType === "specific_date" ? (
+                <div>
+                  <label className="block text-sm text-slate-600 mb-1">일자 (1-31)</label>
+                  <input type="number" min={1} max={31} value={specificDate} onChange={(e) => setSpecificDate(Number(e.target.value))} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">요일 (0=일 ~ 6=토)</label>
+                    <input type="number" min={0} max={6} value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} className="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">몇번째 (1-5)</label>
+                    <input type="number" min={1} max={5} value={weekCount} onChange={(e) => setWeekCount(Number(e.target.value))} className="w-full px-3 py-2 border rounded-lg" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {newHabit.interval_type === "month" && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                실행 날짜
-              </label>
-              <div className="grid grid-cols-7 gap-1 max-h-40 overflow-y-auto">
-                {MONTH_DAYS.map((day) => (
-                  <button
-                    key={day}
-                    onClick={() => toggleIntervalDay(day)}
-                    className={cn(
-                      "py-2 rounded-lg text-sm font-medium transition-all",
-                      newHabit.interval_days.includes(day)
-                        ? "bg-indigo-500 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {newHabit.interval_type === "quarter" && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                분기 실행 월 (분기마다 한번씩)
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                  <button
-                    key={month}
-                    onClick={() => toggleIntervalDay(month)}
-                    className={cn(
-                      "py-2 rounded-lg text-sm font-medium transition-all",
-                      newHabit.interval_days.includes(month)
-                        ? "bg-indigo-500 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    {month}월
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                💡 선택한 월 중 실행 요일: 매월 1일 (또는 해당 월의 시작)
-              </p>
-            </div>
-          )}
-
-          {newHabit.interval_type === "half" && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                반기 실행 월 (반년마다 한번씩)
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                  <button
-                    key={month}
-                    onClick={() => toggleIntervalDay(month)}
-                    className={cn(
-                      "py-2 rounded-lg text-sm font-medium transition-all",
-                      newHabit.interval_days.includes(month)
-                        ? "bg-indigo-500 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    {month}월
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                💡 선택한 월 중 실행: 상반기 1개월, 하반기 1개월
-              </p>
-            </div>
-          )}
-
-          <div className="pt-2">
-            <Button className="w-full" onClick={handleAddHabit}>
-              추가하기
-            </Button>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => { resetForm(); setIsOpen(false); }}>취소</Button>
+            <Button onClick={handleAdd}>저장</Button>
           </div>
         </div>
       </BottomSheet>
-
-      <BottomNavigation />
     </div>
   );
 }

@@ -20,6 +20,7 @@ const initialTasks: Task[] = [
     comment: "팀장님께 먼저 검토 요청하기",
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "2",
@@ -31,6 +32,7 @@ const initialTasks: Task[] = [
     comment: null,
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "3",
@@ -42,6 +44,7 @@ const initialTasks: Task[] = [
     comment: "우유, 계란, 빵",
     completed_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "4",
@@ -53,6 +56,7 @@ const initialTasks: Task[] = [
     comment: null,
     completed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
 ];
 
@@ -170,6 +174,7 @@ export default function TasksPage() {
         isEvent: false,
         completed_at: null,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       setTasks((prev) => {
         const updated = [task, ...prev];

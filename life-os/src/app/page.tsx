@@ -23,6 +23,7 @@ const initialTasks: Task[] = [
     comment: "팀장님께 먼저 검토 요청",
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "2",
@@ -34,6 +35,7 @@ const initialTasks: Task[] = [
     comment: null,
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "t1",
@@ -45,6 +47,7 @@ const initialTasks: Task[] = [
     comment: "회의실 3층 A",
     completed_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "t2",
@@ -56,6 +59,7 @@ const initialTasks: Task[] = [
     comment: "강남역 2번 출구",
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: "t3",
@@ -67,6 +71,7 @@ const initialTasks: Task[] = [
     comment: null,
     completed_at: null,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
 ];
 
