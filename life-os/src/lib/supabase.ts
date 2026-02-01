@@ -23,7 +23,11 @@ export type Database = {
           deadline: string | null;
           status: string;
           category: string | null;
+          comment: string | null;
+          completed_at: string | null;
+          is_event: boolean;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -32,7 +36,11 @@ export type Database = {
           deadline?: string | null;
           status?: string;
           category?: string | null;
+          comment?: string | null;
+          completed_at?: string | null;
+          is_event?: boolean;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -41,7 +49,11 @@ export type Database = {
           deadline?: string | null;
           status?: string;
           category?: string | null;
+          comment?: string | null;
+          completed_at?: string | null;
+          is_event?: boolean;
           created_at?: string;
+          updated_at?: string;
         };
       };
       habits: {
@@ -50,24 +62,36 @@ export type Database = {
           user_id: string;
           title: string;
           interval_type: string;
+          interval_days: number[] | null;
+          quarter_half_year_config: Record<string, unknown> | null;
           last_done_date: string | null;
+          completion_records: Record<string, boolean>;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           title: string;
           interval_type: string;
+          interval_days?: number[] | null;
+          quarter_half_year_config?: Record<string, unknown> | null;
           last_done_date?: string | null;
+          completion_records?: Record<string, boolean>;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           title?: string;
           interval_type?: string;
+          interval_days?: number[] | null;
+          quarter_half_year_config?: Record<string, unknown> | null;
           last_done_date?: string | null;
+          completion_records?: Record<string, boolean>;
           created_at?: string;
+          updated_at?: string;
         };
       };
       scraping_targets: {
@@ -100,26 +124,67 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
+          account_id: string | null;
           ticker: string;
+          name: string | null;
+          market: string;
           target_ratio: number;
           current_quantity: number;
+          avg_price: number;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
+          account_id?: string | null;
           ticker: string;
+          name?: string | null;
+          market?: string;
           target_ratio: number;
           current_quantity?: number;
+          avg_price?: number;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
+          account_id?: string | null;
           ticker?: string;
+          name?: string | null;
+          market?: string;
           target_ratio?: number;
           current_quantity?: number;
+          avg_price?: number;
           created_at?: string;
+          updated_at?: string;
+        };
+      };
+      accounts: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          cash: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          cash?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          cash?: number;
+          created_at?: string;
+          updated_at?: string;
         };
       };
     };

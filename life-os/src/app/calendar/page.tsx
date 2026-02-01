@@ -7,57 +7,14 @@ import { Card, Button, BottomSheet, Input } from "@/components/ui";
 import { Task } from "@/types";
 import { formatDate, cn, getDateKey } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
-import { getStoredTasks, saveTasks } from "@/lib/storage";
-import { useAuthContext } from "@/components/providers/AuthProvider";
-
-// Mock data
-const initialTasks: Task[] = [
-  {
-    id: "1",
-    user_id: "user1",
-    title: "프로젝트 기획서 제출",
-    deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "pending",
-    category: "업무",
-    comment: "팀장님께 먼저 검토 요청",
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    user_id: "user1",
-    title: "팀 미팅",
-    deadline: new Date().toISOString(),
-    status: "pending",
-    category: "업무",
-    comment: "회의실 3층 A",
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    user_id: "user1",
-    title: "치과 예약",
-    deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "pending",
-    category: "개인",
-    comment: null,
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
+import { useTasks } from "@/hooks/useTasks";
 
 export default function CalendarPage() {
-  const { user } = useAuthContext();
-  const userId = user?.id;
-  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks, userId));
+  const { tasks, addTask, updateTask, deleteTask, toggleTask, isLoaded: tasksLoaded } = useTasks();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const { habits, toggleHabit, getHabitCompletionStatus, isLoaded } = useHabits();
+  const { habits, toggleHabit, getHabitCompletionStatus, isLoaded: habitsLoaded } = useHabits();
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTask, setNewTask] = useState({
     title: "",
@@ -75,40 +32,24 @@ export default function CalendarPage() {
 
   const selected = getDateKey(selectedDate);
 
-  // 일정 (isEvent === true): 해당 날짜에 실행하는 일정
+  // 일정 (isEvent === true)
   const eventsForSelectedDate = tasks.filter((task) => {
     if (!task.deadline || !task.isEvent) return false;
     return getDateKey(new Date(task.deadline!)) === selected;
   });
 
-  // 할 일 (isEvent !== true): 해당 날짜가 마감인 할 일
+  // 할 일 (isEvent !== true)
   const deadlineTasksForSelectedDate = tasks.filter((task) => {
     if (!task.deadline || task.isEvent) return false;
     return getDateKey(new Date(task.deadline!)) === selected;
   });
 
   const handleToggle = (id: string) => {
-    setTasks((prev) => {
-      const updated = prev.map((task) =>
-        task.id === id
-          ? ({
-              ...task,
-              status: (task.status === "completed" ? "pending" : "completed") as "pending" | "completed",
-              completed_at: task.status === "completed" ? null : new Date().toISOString(),
-            } as Task)
-          : task
-      );
-      saveTasks(updated, userId);
-      return updated;
-    });
+    toggleTask(id);
   };
 
   const handleDelete = (id: string) => {
-    setTasks((prev) => {
-      const updated = prev.filter((task) => task.id !== id);
-      saveTasks(updated, userId);
-      return updated;
-    });
+    deleteTask(id);
   };
 
   const handleEdit = (task: Task) => {
@@ -121,28 +62,18 @@ export default function CalendarPage() {
     setIsAddSheetOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!newTask.title.trim()) return;
 
     if (editingTask) {
-      setTasks((prev) => {
-        const updated = prev.map((task) =>
-          task.id === editingTask.id
-            ? {
-                ...task,
-                title: newTask.title,
-                category: newTask.category || null,
-                comment: newTask.comment || null,
-              }
-            : task
-        );
-        saveTasks(updated, userId);
-        return updated;
+      await updateTask(editingTask.id, {
+        title: newTask.title,
+        category: newTask.category || null,
+        comment: newTask.comment || null,
       });
     } else {
-      const task: Task = {
-        id: Date.now().toString(),
-        user_id: userId || "",
+      await addTask({
+        user_id: "",
         title: newTask.title,
         deadline: selectedDate.toISOString(),
         status: "pending",
@@ -150,13 +81,6 @@ export default function CalendarPage() {
         comment: newTask.comment || null,
         isEvent: true,
         completed_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setTasks((prev) => {
-        const updated = [task, ...prev];
-        saveTasks(updated, userId);
-        return updated;
       });
     }
 
@@ -200,53 +124,45 @@ export default function CalendarPage() {
           <h2 className="text-lg font-semibold text-slate-900 mb-3">
             {formatDate(selectedDate)} 루틴
           </h2>
-          
-          {isLoaded && habits.length > 0 ? (
+
+          {habitsLoaded && habits.length > 0 ? (
             <div className="space-y-3">
               {habits.map((habit) => {
                 const dateStr = getDateKey(selectedDate);
                 const isCompleted = getHabitCompletionStatus(habit.id, dateStr);
-                
-                // 해당 날짜에 이 루틴이 실행되어야 하는지 확인
+
                 const today = selectedDate.getDay();
                 const todayDate = selectedDate.getDate();
                 const todayMonth = selectedDate.getMonth() + 1;
-                
-                const shouldRunToday = 
+
+                const shouldRunToday =
                   (habit.interval_type === "day") ||
                   (habit.interval_type === "week" && habit.interval_days?.includes(today)) ||
                   (habit.interval_type === "month" && habit.interval_days?.includes(todayDate)) ||
                   (habit.interval_type === "quarter" && habit.interval_days?.includes(todayMonth)) ||
                   (habit.interval_type === "half" && habit.interval_days?.includes(todayMonth));
-                
+
                 if (!shouldRunToday) return null;
-                
-                // 상태별 색상 결정
-                let statusColor = "gray"; // 기본 (실행 대상 아님)
+
                 let statusText = "예정";
                 let dotColor = "bg-gray-300";
-                
+
                 if (isCompleted) {
-                  statusColor = "green";
                   statusText = "완료";
                   dotColor = "bg-green-500";
                 } else {
-                  // 미완료 상태 - interval_type에 따라 색상 결정
                   if (habit.interval_type === "day") {
-                    statusColor = "yellow";
                     statusText = "미완료";
                     dotColor = "bg-yellow-400";
                   } else if (habit.interval_type === "week") {
-                    statusColor = "orange";
                     statusText = "미완료";
                     dotColor = "bg-orange-400";
                   } else {
-                    statusColor = "red";
                     statusText = "미완료";
                     dotColor = "bg-red-400";
                   }
                 }
-                
+
                 return (
                   <button
                     key={habit.id}
@@ -261,7 +177,7 @@ export default function CalendarPage() {
                       </div>
                       <div className={cn(
                         "text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0",
-                        isCompleted 
+                        isCompleted
                           ? "bg-green-100 text-green-700"
                           : "bg-slate-100 text-slate-600"
                       )}>
@@ -272,7 +188,7 @@ export default function CalendarPage() {
                 );
               })}
             </div>
-          ) : !isLoaded ? (
+          ) : !habitsLoaded ? (
             <Card className="text-center py-4">
               <p className="text-slate-400">로딩 중...</p>
             </Card>
@@ -283,17 +199,17 @@ export default function CalendarPage() {
           )}
         </section>
 
-        {/* 일정 (isEvent=true): 해당 날짜에 실행하는 일정 */}
+        {/* 일정 (isEvent=true) */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-slate-900">
               {formatDate(selectedDate)} 일정
             </h2>
             <span className="text-sm text-slate-400">
-              {isMounted ? `${eventsForSelectedDate.length}개` : "-"}
+              {isMounted && tasksLoaded ? `${eventsForSelectedDate.length}개` : "-"}
             </span>
           </div>
-          {isMounted ? (
+          {isMounted && tasksLoaded ? (
             eventsForSelectedDate.length > 0 ? (
               <div className="space-y-2">
                 {eventsForSelectedDate.map((task) => (
@@ -325,8 +241,8 @@ export default function CalendarPage() {
           )}
         </section>
 
-        {/* 마감 할 일 (isEvent=false): 해당 날짜가 마감인 할 일 */}
-        {isMounted && deadlineTasksForSelectedDate.length > 0 && (
+        {/* 마감 할 일 (isEvent=false) */}
+        {isMounted && tasksLoaded && deadlineTasksForSelectedDate.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-slate-900">

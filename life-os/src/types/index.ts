@@ -6,10 +6,10 @@ export interface Task {
   deadline: string | null;
   status: 'pending' | 'completed';
   category: string | null;
-  comment: string | null; // 코멘트 추가
-  completed_at: string | null; // 완료 시간 추가
+  comment: string | null;
+  completed_at: string | null;
   created_at: string;
-  updated_at: string; // 마지막 수정 시간 (Supabase ↔ 로컬스토리지 동기화용)
+  updated_at: string;
   isEvent?: boolean; // true: 캘린더 이벤트(그 날에만 실행), false/undefined: 마감이 있는 할 일
 }
 
@@ -35,7 +35,7 @@ export interface Habit {
   last_done_date: string | null;
   completion_records: Record<string, boolean>; // YYYY-MM-DD: true/false 형태로 날짜별 달성 기록
   created_at: string;
-  updated_at: string; // 마지막 수정 시간 (Supabase ↔ 로컬스토리지 동기화용)
+  updated_at: string;
 }
 
 // Scraping Target types
@@ -53,8 +53,11 @@ export type MarketType = 'KR' | 'US';
 
 export interface Account {
   id: string;
+  user_id?: string;
   name: string; // 예: "키움증권", "토스증권", "미래에셋"
   cash: number; // 계좌의 잔여 현금 (KRW 기준)
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PortfolioItem {
@@ -69,6 +72,7 @@ export interface PortfolioItem {
   avg_price: number;
   current_price?: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ExchangeRate {

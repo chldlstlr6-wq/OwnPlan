@@ -5,28 +5,36 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
   deadline TIMESTAMPTZ,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'cancelled')),
   category TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  comment TEXT,
+  completed_at TIMESTAMPTZ,
+  is_event BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Habits table
 CREATE TABLE IF NOT EXISTS habits (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
   interval_type TEXT NOT NULL CHECK (interval_type IN ('day', 'week', 'month', 'quarter', 'half', 'year')),
+  interval_days INTEGER[],
+  quarter_half_year_config JSONB,
   last_done_date DATE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  completion_records JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Scraping Targets table
 CREATE TABLE IF NOT EXISTS scraping_targets (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   target_url TEXT NOT NULL,
   selector TEXT,
@@ -36,12 +44,27 @@ CREATE TABLE IF NOT EXISTS scraping_targets (
 
 -- Portfolio table
 CREATE TABLE IF NOT EXISTS portfolio (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  account_id TEXT,
   ticker TEXT NOT NULL,
+  name TEXT,
+  market TEXT DEFAULT 'KR',
   target_ratio DECIMAL NOT NULL CHECK (target_ratio >= 0 AND target_ratio <= 100),
   current_quantity INTEGER DEFAULT 0 CHECK (current_quantity >= 0),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  avg_price DECIMAL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Accounts table
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  cash DECIMAL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create indexes for better query performance
@@ -52,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_habits_user_id ON habits(user_id);
 CREATE INDEX IF NOT EXISTS idx_habits_interval_type ON habits(interval_type);
 CREATE INDEX IF NOT EXISTS idx_scraping_targets_user_id ON scraping_targets(user_id);
 CREATE INDEX IF NOT EXISTS idx_portfolio_user_id ON portfolio(user_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
 
 -- Row Level Security (RLS) Policies
 
@@ -60,6 +84,7 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE habits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scraping_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 
 -- Tasks policies
 CREATE POLICY "Users can view their own tasks"
@@ -127,4 +152,21 @@ CREATE POLICY "Users can update their own portfolio items"
 
 CREATE POLICY "Users can delete their own portfolio items"
   ON portfolio FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Accounts policies
+CREATE POLICY "accounts_select"
+  ON accounts FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "accounts_insert"
+  ON accounts FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "accounts_update"
+  ON accounts FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "accounts_delete"
+  ON accounts FOR DELETE
   USING (auth.uid() = user_id);

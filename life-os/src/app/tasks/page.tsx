@@ -5,68 +5,13 @@ import { BottomNavigation, PageHeader } from "@/components/layout";
 import { TaskCard } from "@/components/features";
 import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { Task } from "@/types";
-import { getStoredTasks, saveTasks } from "@/lib/storage";
 import { cn, getDaysUntil } from "@/lib/utils";
-import { useAuthContext } from "@/components/providers/AuthProvider";
-
-// Mock data
-const initialTasks: Task[] = [
-  {
-    id: "1",
-    user_id: "user1",
-    title: "프로젝트 기획서 제출",
-    deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "pending",
-    category: "업무",
-    comment: "팀장님께 먼저 검토 요청하기",
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    user_id: "user1",
-    title: "치과 예약",
-    deadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "pending",
-    category: "개인",
-    comment: null,
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    user_id: "user1",
-    title: "장보기",
-    deadline: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "completed",
-    category: "개인",
-    comment: "우유, 계란, 빵",
-    completed_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "4",
-    user_id: "user1",
-    title: "운동복 세탁",
-    deadline: null,
-    status: "completed",
-    category: "개인",
-    comment: null,
-    completed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
+import { useTasks } from "@/hooks/useTasks";
 
 type SortType = "deadline" | "category" | "created";
 
 export default function TasksPage() {
-  const { user } = useAuthContext();
-  const userId = user?.id;
-  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks, userId));
+  const { tasks, addTask, updateTask, deleteTask, toggleTask, isLoaded } = useTasks();
   const [sortBy, setSortBy] = useState<SortType>("deadline");
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
@@ -112,27 +57,11 @@ export default function TasksPage() {
   }, [tasks, sortBy]);
 
   const handleToggle = (id: string) => {
-    setTasks((prev) => {
-      const updated = prev.map((task) =>
-        task.id === id
-          ? ({
-              ...task,
-              status: (task.status === "completed" ? "pending" : "completed") as "pending" | "completed",
-              completed_at: task.status === "completed" ? null : new Date().toISOString(),
-            } as Task)
-          : task
-      );
-      saveTasks(updated, userId);
-      return updated;
-    });
+    toggleTask(id);
   };
 
   const handleDelete = (id: string) => {
-    setTasks((prev) => {
-      const updated = prev.filter((task) => task.id !== id);
-      saveTasks(updated, userId);
-      return updated;
-    });
+    deleteTask(id);
   };
 
   const handleEdit = (task: Task) => {
@@ -146,29 +75,19 @@ export default function TasksPage() {
     setIsAddSheetOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!newTask.title.trim()) return;
 
     if (editingTask) {
-      setTasks((prev) => {
-        const updated = prev.map((task) =>
-          task.id === editingTask.id
-            ? {
-                ...task,
-                title: newTask.title,
-                category: newTask.category || null,
-                deadline: newTask.deadline || null,
-                comment: newTask.comment || null,
-              }
-            : task
-        );
-        saveTasks(updated, userId);
-        return updated;
+      await updateTask(editingTask.id, {
+        title: newTask.title,
+        category: newTask.category || null,
+        deadline: newTask.deadline || null,
+        comment: newTask.comment || null,
       });
     } else {
-      const task: Task = {
-        id: Date.now().toString(),
-        user_id: userId || "",
+      await addTask({
+        user_id: "",
         title: newTask.title,
         deadline: newTask.deadline || null,
         status: "pending",
@@ -176,13 +95,6 @@ export default function TasksPage() {
         comment: newTask.comment || null,
         isEvent: false,
         completed_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setTasks((prev) => {
-        const updated = [task, ...prev];
-        saveTasks(updated, userId);
-        return updated;
       });
     }
 
@@ -210,7 +122,7 @@ export default function TasksPage() {
     <div className="min-h-screen bg-slate-50 pb-20">
       <PageHeader
         title="할 일"
-        subtitle={`${pendingTasks.length}개 진행중`}
+        subtitle={isLoaded ? `${pendingTasks.length}개 진행중` : "로딩 중..."}
         action={
           <Button size="sm" onClick={() => setIsAddSheetOpen(true)}>
             + 추가

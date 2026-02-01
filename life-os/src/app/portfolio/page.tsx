@@ -5,9 +5,9 @@ import { BottomNavigation, PageHeader } from "@/components/layout";
 import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { PortfolioItem, MarketType, ExchangeRate, Account } from "@/types";
 import { cn } from "@/lib/utils";
-import { getStoredPortfolio, savePortfolio, getStoredAccounts, saveAccounts } from "@/lib/storage";
-import { useAuthContext } from "@/components/providers/AuthProvider";
-import { CASH_TICKER, initialAccounts, initialPortfolio } from "./constants";
+import { usePortfolio } from "@/hooks/usePortfolio";
+import { useAccounts } from "@/hooks/useAccounts";
+import { CASH_TICKER } from "./constants";
 
 const ACCOUNT_COLORS: Record<string, { bg: string; text: string; bar: string; badge: string }> = {};
 const COLOR_PALETTE = [
@@ -26,10 +26,14 @@ function getAccountColor(accountId: string, index: number) {
 }
 
 export default function PortfolioPage() {
-  const { user } = useAuthContext();
-  const userId = user?.id;
-  const [accounts, setAccounts] = useState<Account[]>(() => getStoredAccounts(initialAccounts, userId));
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>(() => getStoredPortfolio(initialPortfolio, userId));
+  const {
+    portfolio, addPortfolioItem, updatePortfolioItem, deletePortfolioItem,
+    deletePortfolioItemsByAccount, updateCurrentPrices,
+  } = usePortfolio();
+  const {
+    accounts, addAccount, updateAccount, deleteAccount: deleteAccountHook,
+  } = useAccounts();
+
   const [exchangeRate, setExchangeRate] = useState<ExchangeRate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -65,12 +69,7 @@ export default function PortfolioPage() {
       const stockData = await stockRes.json();
 
       if (stockData.prices) {
-        setPortfolio((prev) =>
-          prev.map((item) => ({
-            ...item,
-            current_price: stockData.prices[item.ticker]?.price || item.current_price,
-          }))
-        );
+        updateCurrentPrices(stockData.prices);
       }
       setLastUpdated(new Date());
     } catch (err) {
@@ -78,7 +77,7 @@ export default function PortfolioPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [portfolio.length]);
+  }, [portfolio.length, updateCurrentPrices]);
 
   useEffect(() => {
     fetchPrices();
@@ -88,11 +87,9 @@ export default function PortfolioPage() {
   const getItemValueKRW = useCallback(
     (item: PortfolioItem) => {
       if (item.ticker === CASH_TICKER) {
-        // 현금이 달러면 환율을 곱해서 원으로 변환
         if (item.market === "US" && exchangeRate) {
           return item.avg_price * exchangeRate.usd_krw;
         }
-        // 현금이 원이면 그대로 반환
         return item.avg_price;
       }
       const price = item.current_price || item.avg_price;
@@ -102,7 +99,6 @@ export default function PortfolioPage() {
     [exchangeRate]
   );
 
-  // 값을 선택된 통화로 변환
   const convertToDisplayCurrency = useCallback(
     (valueKRW: number): number => {
       if (displayCurrency === "KRW") return valueKRW;
@@ -132,21 +128,17 @@ export default function PortfolioPage() {
   };
 
   const getProfitPercent = (item: PortfolioItem) => {
-    if (item.ticker === CASH_TICKER) {
-      return 0; // 현금은 수익률이 없음
-    }
+    if (item.ticker === CASH_TICKER) return 0;
     const currentPrice = item.current_price || item.avg_price;
     return item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0;
   };
 
-  // --- 종목별 비율 (전체 포트폴리오 기준) ---
+  // --- 종목별 비율 ---
   const tickerRatios = useMemo(() => {
     if (totalValueKRW === 0) return [];
     const tickerMap = new Map<string, { name: string; value: number; items: PortfolioItem[]; targetRatio: number }>();
     for (const item of portfolio) {
-      // 현금은 종목별 비율에서 제외
       if (item.ticker === CASH_TICKER) continue;
-      
       const value = getItemValueKRW(item);
       const existing = tickerMap.get(item.ticker);
       if (existing) {
@@ -181,15 +173,12 @@ export default function PortfolioPage() {
       const items = portfolio.filter((p) => p.account_id === account.id);
       const accountTotal = items.reduce((sum, item) => sum + getItemValueKRW(item), 0);
       if (accountTotal > 0) {
-        const ratios = items.map((item) => {
-          const value = getItemValueKRW(item);
-          return {
-            name: item.name || item.ticker,
-            ratio: (value / accountTotal) * 100,
-            value,
-            item,
-          };
-        });
+        const ratios = items.map((item) => ({
+          name: item.name || item.ticker,
+          ratio: (getItemValueKRW(item) / accountTotal) * 100,
+          value: getItemValueKRW(item),
+          item,
+        }));
         result.set(account.id, ratios.sort((a, b) => b.ratio - a.ratio));
       }
     }
@@ -212,7 +201,6 @@ export default function PortfolioPage() {
       const ratioOfTotal = totalValueKRW > 0 ? (totalKRW / totalValueKRW) * 100 : 0;
       const color = getAccountColor(account.id, idx);
 
-      // 현금 분리 (KRW/USD)
       const cashKRW = items
         .filter((p) => p.ticker === CASH_TICKER && p.market === "KR")
         .reduce((sum, item) => sum + item.avg_price, 0);
@@ -224,7 +212,7 @@ export default function PortfolioPage() {
     });
   }, [accounts, portfolio, getItemValueKRW, exchangeRate, totalValueKRW]);
 
-  // --- 전체 비중 기준 리밸런싱 (같은 ticker 합산) ---
+  // --- 리밸런싱 ---
   const rebalanceSuggestions = useMemo(() => {
     if (!exchangeRate) return [];
     const tickerMap = new Map<string, { name: string; target: number; currentRatio: number }>();
@@ -267,11 +255,7 @@ export default function PortfolioPage() {
 
   // --- CRUD ---
   const handleDelete = (id: string) => {
-    setPortfolio((prev) => {
-      const updated = prev.filter((item) => item.id !== id);
-      savePortfolio(updated, userId);
-      return updated;
-    });
+    deletePortfolioItem(id);
   };
 
   const handleEdit = (item: PortfolioItem) => {
@@ -290,37 +274,16 @@ export default function PortfolioPage() {
     setIsAddSheetOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const avgPrice = parseFloat(newItem.avg_price);
     const targetRatio = parseFloat(newItem.target_ratio);
-    
-    // 현금 모드: ticker 체크 불필요, 가격과 목표비중만 확인
-    // 종목 모드: ticker 필수
+
     if (!newItem.account_id || !newItem.target_ratio) return;
     if (!isCashMode && !newItem.ticker.trim()) return;
     if (isNaN(avgPrice) || isNaN(targetRatio)) return;
 
     if (editingItem) {
-      setPortfolio((prev) =>
-        prev.map((item) =>
-          item.id === editingItem.id
-            ? {
-                ...item,
-                account_id: newItem.account_id,
-                ticker: isCashMode ? CASH_TICKER : newItem.ticker,
-                name: isCashMode ? "현금" : newItem.name || undefined,
-                market: newItem.market,
-                target_ratio: targetRatio,
-                current_quantity: isCashMode ? 0 : parseInt(newItem.current_quantity) || 0,
-                avg_price: avgPrice,
-              }
-            : item
-        )
-      );
-    } else {
-      const item: PortfolioItem = {
-        id: Date.now().toString(),
-        user_id: userId || "",
+      await updatePortfolioItem(editingItem.id, {
         account_id: newItem.account_id,
         ticker: isCashMode ? CASH_TICKER : newItem.ticker,
         name: isCashMode ? "현금" : newItem.name || undefined,
@@ -328,12 +291,17 @@ export default function PortfolioPage() {
         target_ratio: targetRatio,
         current_quantity: isCashMode ? 0 : parseInt(newItem.current_quantity) || 0,
         avg_price: avgPrice,
-        created_at: new Date().toISOString(),
-      };
-      setPortfolio((prev) => {
-        const updated = [...prev, item];
-        savePortfolio(updated, userId);
-        return updated;
+      });
+    } else {
+      await addPortfolioItem({
+        user_id: "",
+        account_id: newItem.account_id,
+        ticker: isCashMode ? CASH_TICKER : newItem.ticker,
+        name: isCashMode ? "현금" : newItem.name || undefined,
+        market: newItem.market,
+        target_ratio: targetRatio,
+        current_quantity: isCashMode ? 0 : parseInt(newItem.current_quantity) || 0,
+        avg_price: avgPrice,
       });
     }
 
@@ -341,17 +309,11 @@ export default function PortfolioPage() {
     setTimeout(fetchPrices, 500);
   };
 
-  const handleAddAccount = () => {
+  const handleAddAccount = async () => {
     if (!newAccountName.trim()) return;
-    const account: Account = { 
-      id: Date.now().toString(), 
+    await addAccount({
       name: newAccountName.trim(),
       cash: parseFloat(newAccountCash) || 0,
-    };
-    setAccounts((prev) => {
-      const updated = [...prev, account];
-      saveAccounts(updated, userId);
-      return updated;
     });
     setNewAccountName("");
     setNewAccountCash("");
@@ -364,33 +326,20 @@ export default function PortfolioPage() {
     setNewAccountCash(account.cash.toString());
   };
 
-  const handleSaveAccount = () => {
+  const handleSaveAccount = async () => {
     if (!editingAccount || !newAccountName.trim()) return;
-    setAccounts((prev) => {
-      const updated = prev.map((a) =>
-        a.id === editingAccount.id
-          ? { ...a, name: newAccountName.trim(), cash: parseFloat(newAccountCash) || 0 }
-          : a
-      );
-      saveAccounts(updated, userId);
-      return updated;
+    await updateAccount(editingAccount.id, {
+      name: newAccountName.trim(),
+      cash: parseFloat(newAccountCash) || 0,
     });
     setEditingAccount(null);
     setNewAccountName("");
     setNewAccountCash("");
   };
 
-  const handleDeleteAccount = (id: string) => {
-    setAccounts((prev) => {
-      const updated = prev.filter((a) => a.id !== id);
-      saveAccounts(updated, userId);
-      return updated;
-    });
-    setPortfolio((prev) => {
-      const updated = prev.filter((p) => p.account_id !== id);
-      savePortfolio(updated, userId);
-      return updated;
-    });
+  const handleDeleteAccount = async (id: string) => {
+    await deleteAccountHook(id);
+    await deletePortfolioItemsByAccount(id);
   };
 
   const resetForm = () => {
@@ -531,11 +480,11 @@ export default function PortfolioPage() {
           {/* 다중 계좌에 있는 종목 경고 */}
           {tickerRatios.some(t => t.accountCount > 1) && (
             <div className="mt-4 pt-4 border-t border-white/20 text-xs text-white/80">
-              <span className="block">📌 다음 종목들은 여러 계좌에 있습니다:</span>
+              <span className="block">다음 종목들은 여러 계좌에 있습니다:</span>
               <div className="mt-2 space-y-1">
                 {tickerRatios.filter(t => t.accountCount > 1).map(t => (
                   <div key={t.ticker} className="text-white/70">
-                    • {t.name}: {t.items.map(item => {
+                    {t.name}: {t.items.map(item => {
                       const acc = accounts.find(a => a.id === item.account_id);
                       return `${acc?.name}(목표 ${item.target_ratio}%)`;
                     }).join(", ")}
@@ -546,7 +495,7 @@ export default function PortfolioPage() {
           )}
         </Card>
 
-        {/* 리밸런싱 경고 (전체 비율 기준) */}
+        {/* 리밸런싱 경고 */}
         {rebalanceSuggestions.length > 0 && (
           <Card variant="outlined" className="border-amber-200 bg-amber-50">
             <div className="flex items-start gap-3">
@@ -590,15 +539,12 @@ export default function PortfolioPage() {
         {/* 계좌별 섹션 */}
         {accountGroups.map((group) => (
           <section key={group.account.id}>
-            {/* 계좌 헤더 카드 */}
             <Card variant="outlined" className={cn("mb-3", group.color.bg)}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className={cn("w-3 h-3 rounded-full", group.color.bar)} />
                   <h3 className={cn("font-semibold", group.color.text)}>{group.account.name}</h3>
-                  <span className="text-xs text-slate-400">
-                    {group.items.length}종목
-                  </span>
+                  <span className="text-xs text-slate-400">{group.items.length}종목</span>
                 </div>
                 <button
                   onClick={() => handleDeleteAccount(group.account.id)}
@@ -634,7 +580,6 @@ export default function PortfolioPage() {
                 </div>
               </div>
 
-              {/* 현금 표시 */}
               {(group.cashKRW > 0 || group.cashUSD > 0) && (
                 <div className="mt-3 pt-3 border-t border-slate-200/50">
                   <div className="text-xs text-slate-400 mb-2">현금</div>
@@ -654,7 +599,6 @@ export default function PortfolioPage() {
                   </div>
                 </div>
               )}
-            {/* 전체 대비 비중 */}
               <div className="mt-3 pt-3 border-t border-slate-200/50">
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
                   <span>전체 대비</span>
@@ -666,7 +610,6 @@ export default function PortfolioPage() {
               </div>
             </Card>
 
-            {/* 계좌 내 종목 비율 */}
             {group.items.length > 0 && (
               <Card variant="outlined" className={cn("mb-3 ml-2", group.color.bg)}>
                 <h4 className={cn("text-sm font-semibold mb-3", group.color.text)}>종목별 비중</h4>
@@ -678,7 +621,6 @@ export default function PortfolioPage() {
                   ];
                   return (
                     <div className="space-y-3">
-                      {/* 비율 바 */}
                       <div className="h-6 bg-slate-200/50 rounded-full overflow-hidden flex">
                         {accountRatios.map((t, idx) => (
                           <div
@@ -689,7 +631,6 @@ export default function PortfolioPage() {
                           />
                         ))}
                       </div>
-                      {/* 범례 */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         {accountRatios.map((t, idx) => (
                           <div key={t.item ? t.item.id : 'cash'} className="flex items-center gap-2">
@@ -706,7 +647,6 @@ export default function PortfolioPage() {
               </Card>
             )}
 
-            {/* 계좌 내 종목 목록 */}
             {group.items.length > 0 ? (
               <div className="space-y-2 ml-2 pl-3 border-l-2 border-slate-100">
                 {group.items.map((item) => {
@@ -865,7 +805,7 @@ export default function PortfolioPage() {
                       <div className="flex-1">
                         <div className="text-slate-700 font-medium">{account.name}</div>
                         <div className="text-xs text-slate-400">
-                          현금 ₩{(account.cash || 0).toLocaleString()} • {portfolio.filter((p) => p.account_id === account.id).length}종목
+                          현금 ₩{(account.cash || 0).toLocaleString()} {portfolio.filter((p) => p.account_id === account.id).length}종목
                         </div>
                       </div>
                     </div>
@@ -898,7 +838,6 @@ export default function PortfolioPage() {
         title={editingItem ? (isCashMode ? "현금 수정" : "종목 수정") : "새로 추가"}
       >
         <div className="space-y-4">
-          {/* 타입 선택 (새로 추가할 때만) */}
           {!editingItem && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">타입</label>
@@ -929,7 +868,6 @@ export default function PortfolioPage() {
             </div>
           )}
 
-          {/* 계좌 선택 */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">계좌</label>
             <div className="flex gap-2 flex-wrap">
@@ -955,8 +893,6 @@ export default function PortfolioPage() {
 
           {isCashMode ? (
             <>
-              {/* 현금 모드 */}
-              {/* 통화 선택 */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">통화</label>
                 <div className="flex gap-2">
@@ -976,7 +912,6 @@ export default function PortfolioPage() {
                   ))}
                 </div>
               </div>
-
               <Input
                 type="number"
                 label={`현금액 (${newItem.market === "US" ? "$" : "₩"})`}
@@ -994,8 +929,6 @@ export default function PortfolioPage() {
             </>
           ) : (
             <>
-              {/* 종목 모드 */}
-              {/* 시장 */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">시장</label>
                 <div className="flex gap-2">
@@ -1015,7 +948,6 @@ export default function PortfolioPage() {
                   ))}
                 </div>
               </div>
-
               <Input
                 label="종목코드 (Yahoo Finance)"
                 placeholder={newItem.market === "KR" ? "005930.KS" : "AAPL"}
