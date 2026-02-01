@@ -98,7 +98,21 @@ export function useHabits(userId?: string) {
     try {
       setLoading(true);
       let query = supabase.from("habits").select("*").order("created_at", { ascending: false });
-      if (userId) query = query.eq("user_id", userId);
+
+      // if a user is signed in, scope query to that user to satisfy RLS policies
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData?.user ?? null;
+        if (user && user.id) {
+          query = query.eq("user_id", user.id);
+        } else if (userId) {
+          query = query.eq("user_id", userId);
+        } else {
+          console.warn("useHabits.fetchHabits: no authenticated user found — remote habits may be restricted by RLS");
+        }
+      } catch (err) {
+        if (userId) query = query.eq("user_id", userId);
+      }
 
       const { data, error } = await query;
       if (error) throw error;
@@ -134,7 +148,16 @@ export function useHabits(userId?: string) {
     async (habit: Omit<Habit, "id" | "created_at" | "updated_at">) => {
       try {
         const now = new Date().toISOString();
-        const payload = { ...habit, user_id: userId || "", created_at: now, updated_at: now };
+        // if user is signed in, attach their id; otherwise keep provided userId or empty
+        let uid = userId || "";
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          const user = userData?.user ?? null;
+          if (user && user.id) uid = user.id;
+        } catch (e) {
+          // ignore
+        }
+        const payload = { ...habit, user_id: uid, created_at: now, updated_at: now };
         const { data, error } = await supabase.from("habits").insert([payload]).select().single();
         if (error) throw error;
 
