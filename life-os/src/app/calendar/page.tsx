@@ -73,11 +73,18 @@ export default function CalendarPage() {
     .filter((task) => task.deadline)
     .map((task) => getDateKey(new Date(task.deadline!)));
 
-  const tasksForSelectedDate = tasks.filter((task) => {
-    if (!task.deadline) return false;
-    const taskDate = getDateKey(new Date(task.deadline!));
-    const selected = getDateKey(selectedDate);
-    return taskDate === selected;
+  const selected = getDateKey(selectedDate);
+
+  // 일정 (isEvent === true): 해당 날짜에 실행하는 일정
+  const eventsForSelectedDate = tasks.filter((task) => {
+    if (!task.deadline || !task.isEvent) return false;
+    return getDateKey(new Date(task.deadline!)) === selected;
+  });
+
+  // 할 일 (isEvent !== true): 해당 날짜가 마감인 할 일
+  const deadlineTasksForSelectedDate = tasks.filter((task) => {
+    if (!task.deadline || task.isEvent) return false;
+    return getDateKey(new Date(task.deadline!)) === selected;
   });
 
   const handleToggle = (id: string) => {
@@ -276,19 +283,20 @@ export default function CalendarPage() {
           )}
         </section>
 
+        {/* 일정 (isEvent=true): 해당 날짜에 실행하는 일정 */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-slate-900">
               {formatDate(selectedDate)} 일정
             </h2>
             <span className="text-sm text-slate-400">
-              {isMounted ? `${tasksForSelectedDate.length}개` : "-"}
+              {isMounted ? `${eventsForSelectedDate.length}개` : "-"}
             </span>
           </div>
           {isMounted ? (
-            tasksForSelectedDate.length > 0 ? (
+            eventsForSelectedDate.length > 0 ? (
               <div className="space-y-2">
-                {tasksForSelectedDate.map((task) => (
+                {eventsForSelectedDate.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -316,6 +324,31 @@ export default function CalendarPage() {
             </Card>
           )}
         </section>
+
+        {/* 마감 할 일 (isEvent=false): 해당 날짜가 마감인 할 일 */}
+        {isMounted && deadlineTasksForSelectedDate.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-slate-900">
+                {formatDate(selectedDate)} 마감 할 일
+              </h2>
+              <span className="text-sm text-slate-400">
+                {deadlineTasksForSelectedDate.length}개
+              </span>
+            </div>
+            <div className="space-y-2">
+              {deadlineTasksForSelectedDate.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onToggle={handleToggle}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       <BottomSheet
