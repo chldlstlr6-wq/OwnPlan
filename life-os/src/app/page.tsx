@@ -8,20 +8,16 @@ import { getDaysUntil, getDateKey } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
 import { useTasks } from "@/hooks/useTasks";
 import { usePortfolio } from "@/hooks/usePortfolio";
-import { useAuthContext } from "@/components/providers/AuthProvider";
-import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
 export default function HomePage() {
-  const { user } = useAuthContext();
-  const { tasks, toggleTask, fetchTasks, isLoaded: tasksLoaded, error: tasksError, isOnline: tasksOnline } = useTasks();
-  const { habits, toggleHabit, fetchHabits, isLoaded: habitsLoaded, error: habitsError } = useHabits();
-  const { portfolio, fetchPortfolio, isLoaded: portfolioLoaded, error: portfolioError } = usePortfolio();
+  const { tasks, toggleTask, fetchTasks, isLoaded: tasksLoaded } = useTasks();
+  const { habits, toggleHabit, fetchHabits, isLoaded: habitsLoaded } = useHabits();
+  const { portfolio, fetchPortfolio, isLoaded: portfolioLoaded } = usePortfolio();
   const today = new Date();
   const greeting = getGreeting();
   const [isMounted, setIsMounted] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string>("");
 
   useEffect(() => {
     setIsMounted(true);
@@ -83,34 +79,9 @@ export default function HomePage() {
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
-    const logs: string[] = [];
-    // 로컬 task 하나를 직접 insert 시도해서 에러 확인
-    try {
-      const localTasks = tasks;
-      logs.push(`로컬 tasks: ${localTasks.length}건`);
-      if (localTasks.length > 0) {
-        const t = localTasks[0];
-        // isEvent -> is_event 변환
-        const { isEvent, ...rest } = t as any;
-        const row = { ...rest, is_event: isEvent || false };
-        logs.push(`insert 시도: id=${t.id.slice(0,8)}...`);
-        const { error } = await supabase.from("tasks").upsert([row], { onConflict: "id" });
-        if (error) {
-          logs.push(`upsert에러: ${error.message} (code:${error.code}, details:${error.details})`);
-        } else {
-          logs.push(`upsert 성공!`);
-        }
-      }
-      // DB에서 조회
-      const { data, error } = await supabase.from("tasks").select("id").eq("user_id", user?.id || "");
-      logs.push(error ? `조회에러: ${error.message}` : `DB tasks: ${data?.length || 0}건`);
-    } catch (e) {
-      logs.push(`예외: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    setDebugInfo(logs.join(" | "));
     await Promise.all([fetchTasks(), fetchHabits(), fetchPortfolio()]);
     setSyncing(false);
-  }, [fetchTasks, fetchHabits, fetchPortfolio, user?.id, tasks]);
+  }, [fetchTasks, fetchHabits, fetchPortfolio]);
 
   const handleToggle = (id: string) => {
     toggleTask(id);
@@ -134,18 +105,6 @@ export default function HomePage() {
       />
 
       <main className="px-4 space-y-6">
-        {/* Debug Banner - 문제 해결 후 제거 */}
-        {isMounted && (
-          <div className="p-3 bg-slate-800 text-white rounded-xl text-xs space-y-1">
-            <div>online: {tasksOnline ? "Y" : "N"} | uid: {user?.id?.slice(0, 8) || "없음"}</div>
-            <div>tasks: {tasks.length}건 | habits: {habits.length}건 | portfolio: {portfolio.length}건</div>
-            {tasksError && <div className="text-red-300">tasks에러: {tasksError.message}</div>}
-            {habitsError && <div className="text-red-300">habits에러: {habitsError.message}</div>}
-            {portfolioError && <div className="text-red-300">portfolio에러: {portfolioError.message}</div>}
-            {debugInfo && <div className="text-yellow-300">{debugInfo}</div>}
-          </div>
-        )}
-
         {/* Quick Stats */}
         <div className="grid grid-cols-3 gap-3">
           <Card className="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white">

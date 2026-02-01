@@ -13,7 +13,7 @@ function fromDB(row: Record<string, unknown>): Task {
     user_id: row.user_id as string,
     title: row.title as string,
     deadline: (row.deadline as string) || null,
-    status: (row.status as 'pending' | 'completed') || 'pending',
+    status: (row.status as "pending" | "completed") || "pending",
     category: (row.category as string) || null,
     comment: (row.comment as string) || null,
     completed_at: (row.completed_at as string) || null,
@@ -26,7 +26,7 @@ function fromDB(row: Record<string, unknown>): Task {
 // Task → DB row (camelCase → snake_case)
 function toDB(task: Partial<Task>): Record<string, unknown> {
   const row: Record<string, unknown> = { ...task };
-  if ('isEvent' in task) {
+  if ("isEvent" in task) {
     row.is_event = task.isEvent;
     delete row.isEvent;
   }
@@ -40,135 +40,111 @@ export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks([], userId));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [isOnline, setIsOnline] = useState(typeof window !== "undefined" && navigator.onLine);
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isOnline, setIsOnline] = useState(
+    typeof window !== "undefined" && navigator.onLine
+  );
+  const fetchingRef = useRef(false);
 
-  // 로컬과 서버의 데이터를 updated_at 기준으로 병합
-  const mergeDataByTimestamp = useCallback((local: Task[], server: Task[]): Task[] => {
-    const merged = new Map<string, Task>();
-
-    // 로컬 데이터 추가
-    local.forEach((t) => merged.set(t.id, t));
-
-    // 서버 데이터: updated_at이 더 최신이면 덮어쓰기
-    server.forEach((s) => {
-      const existing = merged.get(s.id);
-      if (!existing || new Date(s.updated_at) > new Date(existing.updated_at)) {
-        merged.set(s.id, s);
-      }
-    });
-
-    return Array.from(merged.values()).sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, []);
-
+  // 서버 기준 동기화: 로컬 변경분 push → 서버 데이터로 교체
   const fetchTasks = useCallback(async () => {
-    if (!userId) {
+    if (!userId || fetchingRef.current) {
       setLoading(false);
       return;
     }
+    fetchingRef.current = true;
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      // 1) 서버 데이터 가져오기
+      const { data: serverData, error: fetchError } = await supabase
         .from("tasks")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
-      const serverTasks = (data || []).map(fromDB);
+      const serverRows = serverData || [];
+      const serverMap = new Map(serverRows.map((r) => [r.id as string, r]));
+
+      // 2) 로컬에만 있거나 로컬이 더 최신인 항목 → 서버로 push
       const local = getStoredTasks([], userId);
-      const merged = mergeDataByTimestamp(local, serverTasks);
-      setTasks(merged);
-      if (typeof window !== "undefined") saveTasks(merged, userId);
+      const toPush = local.filter((t) => {
+        const server = serverMap.get(t.id);
+        if (!server) return true; // 로컬에만 있음
+        return new Date(t.updated_at) > new Date(server.updated_at as string);
+      });
+
+      if (toPush.length > 0) {
+        for (const task of toPush) {
+          const { error: upsertErr } = await supabase
+            .from("tasks")
+            .upsert([toDB(task)], { onConflict: "id" });
+          if (upsertErr)
+            console.error(`Failed to push task ${task.id}:`, upsertErr);
+        }
+        // push 후 다시 가져오기
+        const { data: freshData } = await supabase
+          .from("tasks")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+        const freshTasks = (freshData || []).map((r) =>
+          fromDB(r as Record<string, unknown>)
+        );
+        setTasks(freshTasks);
+        if (typeof window !== "undefined") saveTasks(freshTasks, userId);
+      } else {
+        // 3) 서버 데이터 = 진실 (삭제된 항목은 로컬에서도 사라짐)
+        const serverTasks = serverRows.map((r) =>
+          fromDB(r as Record<string, unknown>)
+        );
+        setTasks(serverTasks);
+        if (typeof window !== "undefined") saveTasks(serverTasks, userId);
+      }
     } catch (err) {
-      console.error("Failed to fetch tasks from Supabase:", err);
+      console.error("Failed to fetch tasks:", err);
+      // 오프라인 등 실패 시 로컬 폴백
       try {
         const stored = getStoredTasks([], userId);
         setTasks(stored);
-      } catch (fallbackErr) {
-        console.error("Failed to load tasks from localStorage:", fallbackErr);
+      } catch {
         setTasks([]);
       }
-      setError(err instanceof Error ? err : new Error("Failed to fetch tasks"));
+      setError(
+        err instanceof Error ? err : new Error("Failed to fetch tasks")
+      );
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  }, [userId, mergeDataByTimestamp]);
+  }, [userId]);
 
-  // 오프라인 중인 변경사항을 온라인 상태에서 Supabase에 upsert
-  const syncLocalChanges = useCallback(async () => {
-    if (!isOnline || !userId) return;
-
-    try {
-      const localTasks = getStoredTasks([], userId);
-      if (localTasks.length === 0) return;
-
-      for (const task of localTasks) {
-        try {
-          const { data: serverTask, error } = await supabase
-            .from("tasks")
-            .select("*")
-            .eq("id", task.id)
-            .single();
-
-          if (!error && serverTask && new Date(task.updated_at) <= new Date(serverTask.updated_at as string)) {
-            continue;
-          }
-
-          const dbRow = toDB(task);
-          const { error: upsertError } = await supabase.from("tasks").upsert([dbRow], { onConflict: "id" });
-          if (upsertError) console.error(`Failed to sync task ${task.id}:`, upsertError);
-        } catch (err) {
-          console.error(`Failed to check/sync task ${task.id}:`, err);
-        }
-      }
-
-      await fetchTasks();
-    } catch (err) {
-      console.error("Failed to sync local changes:", err);
-    }
-  }, [isOnline, userId, fetchTasks]);
-
-  // 온라인/오프라인 상태 감지 + 앱 복귀 시 자동 재조회
+  // 온라인/오프라인 + 앱 복귀 감지
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-      syncTimeoutRef.current = setTimeout(() => {
-        syncLocalChanges();
-      }, 1000);
+      fetchTasks();
     };
-
     const handleOffline = () => setIsOnline(false);
-
     const handleVisibility = () => {
       if (document.visibilityState === "visible" && navigator.onLine) {
         fetchTasks();
       }
     };
 
-    const handleFocus = () => {
-      if (navigator.onLine) fetchTasks();
-    };
-
     if (typeof window !== "undefined") {
       window.addEventListener("online", handleOnline);
       window.addEventListener("offline", handleOffline);
       document.addEventListener("visibilitychange", handleVisibility);
-      window.addEventListener("focus", handleFocus);
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
         document.removeEventListener("visibilitychange", handleVisibility);
-        window.removeEventListener("focus", handleFocus);
-        if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       };
     }
-  }, [syncLocalChanges, fetchTasks]);
+  }, [fetchTasks]);
 
   useEffect(() => {
     fetchTasks();
@@ -178,9 +154,14 @@ export function useTasks() {
     async (task: Omit<Task, "id" | "created_at" | "updated_at">) => {
       if (!userId) return { error: new Error("User not authenticated") };
 
+      const now = new Date().toISOString();
       try {
-        const now = new Date().toISOString();
-        const dbPayload = toDB({ ...task, user_id: userId, created_at: now, updated_at: now });
+        const dbPayload = toDB({
+          ...task,
+          user_id: userId,
+          created_at: now,
+          updated_at: now,
+        });
         const { data, error } = await supabase
           .from("tasks")
           .insert([dbPayload])
@@ -189,14 +170,20 @@ export function useTasks() {
 
         if (error) throw error;
 
-        const newTask = fromDB(data);
+        const newTask = fromDB(data as Record<string, unknown>);
         const newTasks = [newTask, ...tasks];
         setTasks(newTasks);
         if (typeof window !== "undefined") saveTasks(newTasks, userId);
         return { data: newTask, error: null };
-      } catch (err) {
-        const now = new Date().toISOString();
-        const newTask: Task = { ...(task as Task), id: Date.now().toString(), user_id: userId, created_at: now, updated_at: now };
+      } catch {
+        // 오프라인 폴백
+        const newTask: Task = {
+          ...(task as Task),
+          id: Date.now().toString(),
+          user_id: userId,
+          created_at: now,
+          updated_at: now,
+        };
         const updated = [newTask, ...tasks];
         setTasks(updated);
         if (typeof window !== "undefined") saveTasks(updated, userId);
@@ -206,52 +193,70 @@ export function useTasks() {
     [userId, tasks]
   );
 
-  const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
-    try {
+  const updateTask = useCallback(
+    async (id: string, updates: Partial<Task>) => {
       const now = new Date().toISOString();
       const updatesWithTimestamp = { ...updates, updated_at: now };
 
+      // 즉시 로컬 반영
       const updated = tasks.map((task) =>
         task.id === id ? { ...task, ...updatesWithTimestamp } : task
       );
       setTasks(updated);
       if (typeof window !== "undefined") saveTasks(updated, userId);
 
-      const dbUpdates = toDB(updatesWithTimestamp);
-      const { error } = await supabase
-        .from("tasks")
-        .update(dbUpdates)
-        .eq("id", id);
+      try {
+        const dbUpdates = toDB(updatesWithTimestamp);
+        const { error } = await supabase
+          .from("tasks")
+          .update(dbUpdates)
+          .eq("id", id);
+        if (error) throw error;
+        return {
+          data: updated.find((t) => t.id === id) ?? null,
+          error: null,
+        };
+      } catch (err) {
+        return {
+          data: null,
+          error:
+            err instanceof Error ? err : new Error("Failed to update task"),
+        };
+      }
+    },
+    [tasks, userId]
+  );
 
-      if (error) throw error;
-      return { data: updated.find((t) => t.id === id) ?? null, error: null };
-    } catch (err) {
-      return { data: null, error: err instanceof Error ? err : new Error("Failed to update task") };
-    }
-  }, [tasks, userId]);
-
-  const deleteTask = useCallback(async (id: string) => {
-    try {
+  const deleteTask = useCallback(
+    async (id: string) => {
+      // 즉시 로컬 반영
       const updated = tasks.filter((task) => task.id !== id);
       setTasks(updated);
       if (typeof window !== "undefined") saveTasks(updated, userId);
 
-      const { error } = await supabase.from("tasks").delete().eq("id", id);
-
-      if (error) throw error;
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? err : new Error("Failed to delete task") };
-    }
-  }, [tasks, userId]);
+      try {
+        const { error } = await supabase.from("tasks").delete().eq("id", id);
+        if (error) throw error;
+        return { error: null };
+      } catch (err) {
+        return {
+          error:
+            err instanceof Error ? err : new Error("Failed to delete task"),
+        };
+      }
+    },
+    [tasks, userId]
+  );
 
   const toggleTask = useCallback(
     async (id: string) => {
       const task = tasks.find((t) => t.id === id);
       if (!task) return { error: new Error("Task not found") };
 
-      const newStatus = task.status === "completed" ? "pending" : "completed";
-      const completed_at = newStatus === "completed" ? new Date().toISOString() : null;
+      const newStatus =
+        task.status === "completed" ? "pending" : "completed";
+      const completed_at =
+        newStatus === "completed" ? new Date().toISOString() : null;
       return updateTask(id, { status: newStatus, completed_at });
     },
     [tasks, updateTask]
