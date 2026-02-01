@@ -58,3 +58,12 @@ export function isUrgent(deadline: string | Date, threshold: number = 3): boolea
   const days = getDaysUntil(deadline);
   return days >= 0 && days <= threshold;
 }
+
+// Returns a local date key in YYYY-MM-DD (local timezone)
+export function getDateKey(date: Date | string = new Date()): string {
+  const d = typeof date === "string" ? new Date(date) : new Date(date.getTime());
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn, getDateKey } from "@/lib/utils";
 import { useState } from "react";
 import { Card } from "../ui";
 import { Habit } from "@/types";
@@ -43,7 +43,7 @@ export default function CalendarWidget({
 
   // 해당 날짜의 루틴 달성 상태를 계산
   const getHabitStatusForDate = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = getDateKey(date);
     const today = date.getDay();
     const todayDate = date.getDate();
     const todayMonth = date.getMonth() + 1;
@@ -97,7 +97,7 @@ export default function CalendarWidget({
   };
 
   const isMarked = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = getDateKey(date);
     return markedDates.includes(dateStr);
   };
 

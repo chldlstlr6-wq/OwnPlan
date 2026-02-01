@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Habit } from "@/types";
 import { getStoredHabits, saveHabits } from "@/lib/storage";
+import { getDateKey } from "@/lib/utils";
 
 export function useHabits(userId?: string) {
   const [habits, setHabits] = useState<Habit[]>(() => getStoredHabits([]));
@@ -192,7 +193,7 @@ export function useHabits(userId?: string) {
       const habit = habits.find((h) => h.id === id);
       if (!habit) return;
 
-      const date = dateStr || new Date().toISOString().split("T")[0];
+      const date = dateStr || getDateKey();
       const records = { ...habit.completion_records };
       const isCompleted = records[date];
       records[date] = !isCompleted;
@@ -215,7 +216,7 @@ export function useHabits(userId?: string) {
     (habitId: string, dateStr?: string): boolean => {
       const habit = habits.find((h) => h.id === habitId);
       if (!habit) return false;
-      const date = dateStr || new Date().toISOString().split("T")[0];
+      const date = dateStr || getDateKey();
       return habit.completion_records?.[date] ?? false;
     },
     [habits]

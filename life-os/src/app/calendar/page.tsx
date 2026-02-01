@@ -5,7 +5,7 @@ import { BottomNavigation, PageHeader } from "@/components/layout";
 import { CalendarWidget, TaskCard } from "@/components/features";
 import { Card, Button, BottomSheet, Input } from "@/components/ui";
 import { Task } from "@/types";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, getDateKey } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
 import { getStoredTasks, saveTasks } from "@/lib/storage";
 
@@ -68,12 +68,12 @@ export default function CalendarPage() {
 
   const markedDates = tasks
     .filter((task) => task.deadline)
-    .map((task) => new Date(task.deadline!).toISOString().split("T")[0]);
+    .map((task) => getDateKey(new Date(task.deadline!)));
 
   const tasksForSelectedDate = tasks.filter((task) => {
     if (!task.deadline) return false;
-    const taskDate = new Date(task.deadline).toISOString().split("T")[0];
-    const selected = selectedDate.toISOString().split("T")[0];
+    const taskDate = getDateKey(new Date(task.deadline!));
+    const selected = getDateKey(selectedDate);
     return taskDate === selected;
   });
 
@@ -194,7 +194,7 @@ export default function CalendarPage() {
           {isLoaded && habits.length > 0 ? (
             <div className="space-y-3">
               {habits.map((habit) => {
-                const dateStr = selectedDate.toISOString().split("T")[0];
+                const dateStr = getDateKey(selectedDate);
                 const isCompleted = getHabitCompletionStatus(habit.id, dateStr);
                 
                 // 해당 날짜에 이 루틴이 실행되어야 하는지 확인

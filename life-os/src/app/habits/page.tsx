@@ -4,6 +4,7 @@ import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
+import BottomNavigation from "@/components/layout/BottomNavigation";
 import { useHabits } from "@/hooks/useHabits";
 import { DateType, Habit, IntervalType, QuarterHalfYearConfig } from "@/types";
 
@@ -174,6 +175,8 @@ export default function HabitsPage() {
           </div>
         </div>
       </BottomSheet>
+
+      <BottomNavigation />
     </div>
   );
 }

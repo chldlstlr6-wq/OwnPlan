@@ -5,7 +5,7 @@ import { Card } from "@/components/ui";
 import { BottomNavigation, PageHeader } from "@/components/layout";
 import { TaskCard, HabitCard } from "@/components/features";
 import { Task, Habit } from "@/types";
-import { getDaysUntil, getIntervalLabel } from "@/lib/utils";
+import { getDaysUntil, getIntervalLabel, getDateKey } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
 import Link from "next/link";
 import { getStoredTasks, saveTasks, getStoredPortfolio } from "@/lib/storage";
@@ -130,8 +130,8 @@ export default function HomePage() {
   const todayEvents = tasks.filter((task) => {
     if (!task.deadline) return false;
     if (!task.isEvent) return false;
-    const taskDate = new Date(task.deadline).toISOString().split("T")[0];
-    const todayDate = today.toISOString().split("T")[0];
+    const taskDate = getDateKey(new Date(task.deadline));
+    const todayDate = getDateKey(today);
     return taskDate === todayDate;
   });
 
@@ -153,7 +153,7 @@ export default function HomePage() {
     const now = new Date();
     const today = now.getDay();
     const todayDate = now.getDate();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = getDateKey(now);
     
     // 오늘 이미 완료한 루틴은 제외
     if (habit.last_done_date === todayStr) return false;
