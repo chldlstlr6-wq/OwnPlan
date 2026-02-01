@@ -6,6 +6,7 @@ import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { PortfolioItem, MarketType, ExchangeRate, Account } from "@/types";
 import { cn } from "@/lib/utils";
 import { getStoredPortfolio, savePortfolio, getStoredAccounts, saveAccounts } from "@/lib/storage";
+import { useAuthContext } from "@/components/providers/AuthProvider";
 import { CASH_TICKER, initialAccounts, initialPortfolio } from "./constants";
 
 const ACCOUNT_COLORS: Record<string, { bg: string; text: string; bar: string; badge: string }> = {};
@@ -25,8 +26,10 @@ function getAccountColor(accountId: string, index: number) {
 }
 
 export default function PortfolioPage() {
-  const [accounts, setAccounts] = useState<Account[]>(() => getStoredAccounts(initialAccounts));
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>(() => getStoredPortfolio(initialPortfolio));
+  const { user } = useAuthContext();
+  const userId = user?.id;
+  const [accounts, setAccounts] = useState<Account[]>(() => getStoredAccounts(initialAccounts, userId));
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>(() => getStoredPortfolio(initialPortfolio, userId));
   const [exchangeRate, setExchangeRate] = useState<ExchangeRate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -266,7 +269,7 @@ export default function PortfolioPage() {
   const handleDelete = (id: string) => {
     setPortfolio((prev) => {
       const updated = prev.filter((item) => item.id !== id);
-      savePortfolio(updated);
+      savePortfolio(updated, userId);
       return updated;
     });
   };
@@ -317,7 +320,7 @@ export default function PortfolioPage() {
     } else {
       const item: PortfolioItem = {
         id: Date.now().toString(),
-        user_id: "user1",
+        user_id: userId || "",
         account_id: newItem.account_id,
         ticker: isCashMode ? CASH_TICKER : newItem.ticker,
         name: isCashMode ? "현금" : newItem.name || undefined,
@@ -329,7 +332,7 @@ export default function PortfolioPage() {
       };
       setPortfolio((prev) => {
         const updated = [...prev, item];
-        savePortfolio(updated);
+        savePortfolio(updated, userId);
         return updated;
       });
     }
@@ -347,7 +350,7 @@ export default function PortfolioPage() {
     };
     setAccounts((prev) => {
       const updated = [...prev, account];
-      saveAccounts(updated);
+      saveAccounts(updated, userId);
       return updated;
     });
     setNewAccountName("");
@@ -369,7 +372,7 @@ export default function PortfolioPage() {
           ? { ...a, name: newAccountName.trim(), cash: parseFloat(newAccountCash) || 0 }
           : a
       );
-      saveAccounts(updated);
+      saveAccounts(updated, userId);
       return updated;
     });
     setEditingAccount(null);
@@ -380,12 +383,12 @@ export default function PortfolioPage() {
   const handleDeleteAccount = (id: string) => {
     setAccounts((prev) => {
       const updated = prev.filter((a) => a.id !== id);
-      saveAccounts(updated);
+      saveAccounts(updated, userId);
       return updated;
     });
     setPortfolio((prev) => {
       const updated = prev.filter((p) => p.account_id !== id);
-      savePortfolio(updated);
+      savePortfolio(updated, userId);
       return updated;
     });
   };

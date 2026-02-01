@@ -7,6 +7,7 @@ import { Button, BottomSheet, Input, Card } from "@/components/ui";
 import { Task } from "@/types";
 import { getStoredTasks, saveTasks } from "@/lib/storage";
 import { cn, getDaysUntil } from "@/lib/utils";
+import { useAuthContext } from "@/components/providers/AuthProvider";
 
 // Mock data
 const initialTasks: Task[] = [
@@ -63,7 +64,9 @@ const initialTasks: Task[] = [
 type SortType = "deadline" | "category" | "created";
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks));
+  const { user } = useAuthContext();
+  const userId = user?.id;
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks, userId));
   const [sortBy, setSortBy] = useState<SortType>("deadline");
   const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
@@ -119,7 +122,7 @@ export default function TasksPage() {
             } as Task)
           : task
       );
-      saveTasks(updated);
+      saveTasks(updated, userId);
       return updated;
     });
   };
@@ -127,7 +130,7 @@ export default function TasksPage() {
   const handleDelete = (id: string) => {
     setTasks((prev) => {
       const updated = prev.filter((task) => task.id !== id);
-      saveTasks(updated);
+      saveTasks(updated, userId);
       return updated;
     });
   };
@@ -159,13 +162,13 @@ export default function TasksPage() {
               }
             : task
         );
-        saveTasks(updated);
+        saveTasks(updated, userId);
         return updated;
       });
     } else {
       const task: Task = {
         id: Date.now().toString(),
-        user_id: "user1",
+        user_id: userId || "",
         title: newTask.title,
         deadline: newTask.deadline || null,
         status: "pending",
@@ -178,7 +181,7 @@ export default function TasksPage() {
       };
       setTasks((prev) => {
         const updated = [task, ...prev];
-        saveTasks(updated);
+        saveTasks(updated, userId);
         return updated;
       });
     }

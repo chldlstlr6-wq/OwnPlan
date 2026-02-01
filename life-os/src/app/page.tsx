@@ -10,6 +10,7 @@ import { useHabits } from "@/hooks/useHabits";
 import Link from "next/link";
 import { getStoredTasks, saveTasks, getStoredPortfolio } from "@/lib/storage";
 import { initialPortfolio as portfolioInitial } from "@/app/portfolio/constants";
+import { useAuthContext } from "@/components/providers/AuthProvider";
 
 // Mock data - will be replaced with Supabase
 const initialTasks: Task[] = [
@@ -76,11 +77,13 @@ const initialTasks: Task[] = [
 ];
 
 export default function HomePage() {
-  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks));
+  const { user, signOut } = useAuthContext();
+  const userId = user?.id;
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks, userId));
   const { habits, toggleHabit, isLoaded } = useHabits();
   const today = new Date();
   const greeting = getGreeting();
-  const [portfolio] = useState<any[]>(() => getStoredPortfolio(portfolioInitial || []));
+  const [portfolio] = useState<any[]>(() => getStoredPortfolio(portfolioInitial || [], userId));
   const [isMounted, setIsMounted] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
 
@@ -108,13 +111,13 @@ export default function HomePage() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === null || e.key === undefined) {
         // global change, reload
-        setTasks(getStoredTasks(initialTasks));
+        setTasks(getStoredTasks(initialTasks, userId));
       } else if (e.key === "ownplan_tasks") {
-        setTasks(getStoredTasks(initialTasks));
+        setTasks(getStoredTasks(initialTasks, userId));
       }
     };
 
-    const onFocus = () => setTasks(getStoredTasks(initialTasks));
+    const onFocus = () => setTasks(getStoredTasks(initialTasks, userId));
 
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
@@ -181,7 +184,7 @@ export default function HomePage() {
             }
           : task
       );
-      saveTasks(updated);
+      saveTasks(updated, userId);
       return updated;
     });
   };

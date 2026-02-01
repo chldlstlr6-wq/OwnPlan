@@ -8,6 +8,7 @@ import { Task } from "@/types";
 import { formatDate, cn, getDateKey } from "@/lib/utils";
 import { useHabits } from "@/hooks/useHabits";
 import { getStoredTasks, saveTasks } from "@/lib/storage";
+import { useAuthContext } from "@/components/providers/AuthProvider";
 
 // Mock data
 const initialTasks: Task[] = [
@@ -50,7 +51,9 @@ const initialTasks: Task[] = [
 ];
 
 export default function CalendarPage() {
-  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks));
+  const { user } = useAuthContext();
+  const userId = user?.id;
+  const [tasks, setTasks] = useState<Task[]>(() => getStoredTasks(initialTasks, userId));
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -88,7 +91,7 @@ export default function CalendarPage() {
             } as Task)
           : task
       );
-      saveTasks(updated);
+      saveTasks(updated, userId);
       return updated;
     });
   };
@@ -96,7 +99,7 @@ export default function CalendarPage() {
   const handleDelete = (id: string) => {
     setTasks((prev) => {
       const updated = prev.filter((task) => task.id !== id);
-      saveTasks(updated);
+      saveTasks(updated, userId);
       return updated;
     });
   };
@@ -126,13 +129,13 @@ export default function CalendarPage() {
               }
             : task
         );
-        saveTasks(updated);
+        saveTasks(updated, userId);
         return updated;
       });
     } else {
       const task: Task = {
         id: Date.now().toString(),
-        user_id: "user1",
+        user_id: userId || "",
         title: newTask.title,
         deadline: selectedDate.toISOString(),
         status: "pending",
@@ -145,7 +148,7 @@ export default function CalendarPage() {
       };
       setTasks((prev) => {
         const updated = [task, ...prev];
-        saveTasks(updated);
+        saveTasks(updated, userId);
         return updated;
       });
     }
