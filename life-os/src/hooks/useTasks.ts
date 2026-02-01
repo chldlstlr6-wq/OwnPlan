@@ -133,7 +133,7 @@ export function useTasks() {
     }
   }, [isOnline, userId, fetchTasks]);
 
-  // 온라인/오프라인 상태 감지
+  // 온라인/오프라인 상태 감지 + 앱 복귀 시 자동 재조회
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
@@ -145,16 +145,30 @@ export function useTasks() {
 
     const handleOffline = () => setIsOnline(false);
 
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        fetchTasks();
+      }
+    };
+
+    const handleFocus = () => {
+      if (navigator.onLine) fetchTasks();
+    };
+
     if (typeof window !== "undefined") {
       window.addEventListener("online", handleOnline);
       window.addEventListener("offline", handleOffline);
+      document.addEventListener("visibilitychange", handleVisibility);
+      window.addEventListener("focus", handleFocus);
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
+        document.removeEventListener("visibilitychange", handleVisibility);
+        window.removeEventListener("focus", handleFocus);
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       };
     }
-  }, [syncLocalChanges]);
+  }, [syncLocalChanges, fetchTasks]);
 
   useEffect(() => {
     fetchTasks();

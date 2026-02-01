@@ -108,16 +108,30 @@ export function useAccounts() {
     };
     const handleOffline = () => setIsOnline(false);
 
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        fetchAccounts();
+      }
+    };
+
+    const handleFocus = () => {
+      if (navigator.onLine) fetchAccounts();
+    };
+
     if (typeof window !== "undefined") {
       window.addEventListener("online", handleOnline);
       window.addEventListener("offline", handleOffline);
+      document.addEventListener("visibilitychange", handleVisibility);
+      window.addEventListener("focus", handleFocus);
       return () => {
         window.removeEventListener("online", handleOnline);
         window.removeEventListener("offline", handleOffline);
+        document.removeEventListener("visibilitychange", handleVisibility);
+        window.removeEventListener("focus", handleFocus);
         if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       };
     }
-  }, [syncLocalChanges]);
+  }, [syncLocalChanges, fetchAccounts]);
 
   useEffect(() => {
     fetchAccounts();

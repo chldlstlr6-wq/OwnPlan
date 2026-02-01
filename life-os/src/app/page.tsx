@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card } from "@/components/ui";
+import { useState, useEffect, useCallback } from "react";
+import { Card, Button } from "@/components/ui";
 import { BottomNavigation, PageHeader } from "@/components/layout";
 import { TaskCard, HabitCard } from "@/components/features";
 import { getDaysUntil, getDateKey } from "@/lib/utils";
@@ -11,9 +11,9 @@ import { usePortfolio } from "@/hooks/usePortfolio";
 import Link from "next/link";
 
 export default function HomePage() {
-  const { tasks, toggleTask, isLoaded: tasksLoaded } = useTasks();
-  const { habits, toggleHabit, isLoaded: habitsLoaded } = useHabits();
-  const { portfolio, isLoaded: portfolioLoaded } = usePortfolio();
+  const { tasks, toggleTask, fetchTasks, isLoaded: tasksLoaded } = useTasks();
+  const { habits, toggleHabit, fetchHabits, isLoaded: habitsLoaded } = useHabits();
+  const { portfolio, fetchPortfolio, isLoaded: portfolioLoaded } = usePortfolio();
   const today = new Date();
   const greeting = getGreeting();
   const [isMounted, setIsMounted] = useState(false);
@@ -75,6 +75,14 @@ export default function HomePage() {
     return false;
   });
 
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    await Promise.all([fetchTasks(), fetchHabits(), fetchPortfolio()]);
+    setSyncing(false);
+  }, [fetchTasks, fetchHabits, fetchPortfolio]);
+
   const handleToggle = (id: string) => {
     toggleTask(id);
   };
@@ -89,6 +97,11 @@ export default function HomePage() {
           day: "numeric",
           weekday: "long",
         })}
+        action={
+          <Button size="sm" variant="ghost" onClick={handleSync} disabled={syncing}>
+            {syncing ? "동기화중..." : "새로고침"}
+          </Button>
+        }
       />
 
       <main className="px-4 space-y-6">
