@@ -83,23 +83,34 @@ export default function HomePage() {
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
-    // 직접 Supabase 테스트
+    const logs: string[] = [];
+    // 로컬 task 하나를 직접 insert 시도해서 에러 확인
     try {
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("id, title")
-        .limit(3);
-      if (error) {
-        setDebugInfo(`DB에러: ${error.message} (code: ${error.code})`);
-      } else {
-        setDebugInfo(`DB연결 OK. tasks ${data?.length || 0}건 / uid: ${user?.id?.slice(0, 8)}...`);
+      const localTasks = tasks;
+      logs.push(`로컬 tasks: ${localTasks.length}건`);
+      if (localTasks.length > 0) {
+        const t = localTasks[0];
+        // isEvent -> is_event 변환
+        const { isEvent, ...rest } = t as any;
+        const row = { ...rest, is_event: isEvent || false };
+        logs.push(`insert 시도: id=${t.id.slice(0,8)}...`);
+        const { error } = await supabase.from("tasks").upsert([row], { onConflict: "id" });
+        if (error) {
+          logs.push(`upsert에러: ${error.message} (code:${error.code}, details:${error.details})`);
+        } else {
+          logs.push(`upsert 성공!`);
+        }
       }
+      // DB에서 조회
+      const { data, error } = await supabase.from("tasks").select("id").eq("user_id", user?.id || "");
+      logs.push(error ? `조회에러: ${error.message}` : `DB tasks: ${data?.length || 0}건`);
     } catch (e) {
-      setDebugInfo(`예외: ${e instanceof Error ? e.message : String(e)}`);
+      logs.push(`예외: ${e instanceof Error ? e.message : String(e)}`);
     }
+    setDebugInfo(logs.join(" | "));
     await Promise.all([fetchTasks(), fetchHabits(), fetchPortfolio()]);
     setSyncing(false);
-  }, [fetchTasks, fetchHabits, fetchPortfolio, user?.id]);
+  }, [fetchTasks, fetchHabits, fetchPortfolio, user?.id, tasks]);
 
   const handleToggle = (id: string) => {
     toggleTask(id);
