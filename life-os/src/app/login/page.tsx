@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthContext } from "@/components/providers/AuthProvider";
 import { supabase } from "@/lib/supabase";
@@ -13,8 +13,57 @@ export default function LoginPage() {
   const [signUpSuccess, setSignUpSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<{
+    connected: boolean;
+    message: string;
+    details?: string;
+  } | null>(null);
   const { signIn } = useAuthContext();
   const router = useRouter();
+
+  // Supabase 연결 상태 확인
+  useEffect(() => {
+    const checkSupabaseConnection = async () => {
+      try {
+        // 환경변수 확인
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!url || !key) {
+          setSupabaseStatus({
+            connected: false,
+            message: "환경변수 설정 오류",
+            details: `URL: ${url ? "설정됨" : "미설정"}, KEY: ${key ? "설정됨" : "미설정"}`,
+          });
+          return;
+        }
+
+        // Supabase 상태 확인
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error && error.message.includes("fetch")) {
+          setSupabaseStatus({
+            connected: false,
+            message: "Supabase 서버 연결 실패",
+            details: "네트워크 연결을 확인해주세요.",
+          });
+        } else {
+          setSupabaseStatus({
+            connected: true,
+            message: "Supabase 연결 정상",
+          });
+        }
+      } catch (err) {
+        setSupabaseStatus({
+          connected: false,
+          message: "연결 확인 중 오류 발생",
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    checkSupabaseConnection();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,25 +82,57 @@ export default function LoginPage() {
       }
 
       setIsSubmitting(true);
-      const { error } = await supabase.auth.signUp({ email, password });
-      setIsSubmitting(false);
-
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        // 가입 후 자동 로그인 방지 - 세션을 바로 끊음
-        await supabase.auth.signOut();
-        setSignUpSuccess(true);
+      try {
+        const { error } = await supabase.auth.signUp({ email, password });
+        
+        if (error) {
+          console.error("[회원가입 오류]", error);
+          // 일반적인 에러 메시지를 더 자세하게 표시
+          if (error.message.includes("already exists")) {
+            setErrorMessage("이미 가입된 이메일입니다.");
+          } else if (error.message.includes("fetch")) {
+            setErrorMessage("서버 연결 실패. 인터넷 연결을 확인해주세요.");
+          } else {
+            setErrorMessage(`가입 실패: ${error.message}`);
+          }
+        } else {
+          // 가입 후 자동 로그인 방지 - 세션을 바로 끊음
+          await supabase.auth.signOut();
+          setSignUpSuccess(true);
+        }
+      } catch (err) {
+        console.error("[회원가입 예외]", err);
+        setErrorMessage("예상치 못한 오류가 발생했습니다. 다시 시도해주세요.");
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
       setIsSubmitting(true);
-      const { error } = await signIn(email, password);
-      setIsSubmitting(false);
+      try {
+        const { error } = await signIn(email, password);
 
-      if (error) {
-        setErrorMessage(error.message);
-      } else {
-        router.replace("/");
+        if (error) {
+          console.error("[로그인 오류]", error);
+          // 구체적인 오류 메시지
+          if (error.message.includes("Invalid login")) {
+            setErrorMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
+          } else if (error.message.includes("not confirmed")) {
+            setErrorMessage("이메일 인증이 필요합니다. 이메일을 확인해주세요.");
+          } else if (error.message.includes("fetch") || error.message.includes("network")) {
+            setErrorMessage("서버 연결 실패. 인터넷 연결을 확인해주세요.");
+          } else if (error.message.includes("timeout")) {
+            setErrorMessage("요청 시간 초과. 다시 시도해주세요.");
+          } else {
+            setErrorMessage(`로그인 실패: ${error.message}`);
+          }
+        } else {
+          router.replace("/");
+        }
+      } catch (err) {
+        console.error("[로그인 예외]", err);
+        setErrorMessage("예상치 못한 오류가 발생했습니다. 다시 시도해주세요.");
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
@@ -106,6 +187,32 @@ export default function LoginPage() {
           <h2 className="text-xl font-semibold text-slate-900 mb-6 text-center">
             {isSignUp ? "회원가입" : "로그인"}
           </h2>
+
+          {/* Supabase 연결 상태 표시 */}
+          {supabaseStatus && (
+            <div
+              className={`mb-4 px-4 py-3 rounded-xl border ${
+                supabaseStatus.connected
+                  ? "bg-green-50 border-green-200"
+                  : "bg-yellow-50 border-yellow-200"
+              }`}
+            >
+              <p
+                className={`text-sm font-medium ${
+                  supabaseStatus.connected
+                    ? "text-green-700"
+                    : "text-yellow-700"
+                }`}
+              >
+                {supabaseStatus.message}
+              </p>
+              {supabaseStatus.details && (
+                <p className="text-xs text-gray-600 mt-1">
+                  {supabaseStatus.details}
+                </p>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -187,6 +294,34 @@ export default function LoginPage() {
                 : "계정이 없으신가요? 회원가입"}
             </button>
           </div>
+
+          {/* 디버그 정보 */}
+          <details className="mt-6 text-xs text-slate-500">
+            <summary className="cursor-pointer hover:text-slate-600">
+              📋 디버그 정보 (문제 해결용)
+            </summary>
+            <div className="mt-2 space-y-1 bg-slate-50 p-2 rounded border border-slate-200">
+              <div>
+                <strong>Supabase URL:</strong>
+                <br />
+                {process.env.NEXT_PUBLIC_SUPABASE_URL
+                  ? "✓ 설정됨"
+                  : "✗ 미설정"}
+              </div>
+              <div>
+                <strong>Supabase Key:</strong>
+                <br />
+                {process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+                  ? "✓ 설정됨"
+                  : "✗ 미설정"}
+              </div>
+              <div>
+                <strong>브라우저 콘솔:</strong>
+                <br />
+                F12를 눌러 콘솔에서 자세한 오류 메시지를 확인하세요.
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>
