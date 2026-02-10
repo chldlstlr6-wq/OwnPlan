@@ -3,13 +3,14 @@
 import { cn, getDateKey } from "@/lib/utils";
 import { useState } from "react";
 import { Card } from "../ui";
-import { Habit } from "@/types";
+import { Habit, Task } from "@/types";
 
 interface CalendarWidgetProps {
   selectedDate?: Date;
   onDateSelect?: (date: Date) => void;
   markedDates?: string[];
   habits?: Habit[];
+  tasks?: Task[];
 }
 
 export default function CalendarWidget({
@@ -17,6 +18,7 @@ export default function CalendarWidget({
   onDateSelect,
   markedDates = [],
   habits = [],
+  tasks = [],
 }: CalendarWidgetProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
 
@@ -74,6 +76,16 @@ export default function CalendarWidget({
     });
     
     return { allCompleted, dayIncompleted, weekIncompleted, otherIncompleted };
+  };
+
+  // 해당 날짜의 일정 개수 계산
+  const getTaskCountForDate = (date: Date) => {
+    const dateStr = getDateKey(date);
+    const eventCount = tasks.filter((task) => {
+      if (!task.deadline || !task.isEvent) return false;
+      return getDateKey(new Date(task.deadline)) === dateStr;
+    }).length;
+    return eventCount;
   };
 
   const days = getDaysInMonth(currentMonth);
@@ -144,6 +156,7 @@ export default function CalendarWidget({
       <div className="grid grid-cols-7 gap-1">
         {days.map((date, index) => {
           const status = date ? getHabitStatusForDate(date) : null;
+          const eventCount = date ? getTaskCountForDate(date) : 0;
           
           return (
             <button
@@ -181,6 +194,22 @@ export default function CalendarWidget({
                   {/* 기타 미완료 (분기/월간/반기): 빨간색 */}
                   {status.otherIncompleted > 0 && (
                     <div className="w-1.5 h-1.5 rounded-full bg-red-400" title={`장기 미완료: ${status.otherIncompleted}개`} />
+                  )}
+                </div>
+              )}
+
+              {/* 일정 표시 - 날짜 아래에 동그라미로 표시 */}
+              {eventCount > 0 && (
+                <div className="flex gap-1 mt-1 items-center">
+                  {Array.from({ length: Math.min(eventCount, 3) }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-1 h-1 rounded-full bg-indigo-500"
+                      title={`${eventCount}개 일정`}
+                    />
+                  ))}
+                  {eventCount > 3 && (
+                    <span className="text-xs text-indigo-500 font-semibold">+</span>
                   )}
                 </div>
               )}

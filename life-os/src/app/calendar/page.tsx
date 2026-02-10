@@ -117,6 +117,7 @@ export default function CalendarPage() {
           onDateSelect={setSelectedDate}
           markedDates={markedDates}
           habits={habits}
+          tasks={tasks}
         />
 
         {/* 오늘의 루틴 달성 상태 */}
